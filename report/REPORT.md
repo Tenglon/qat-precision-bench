@@ -13,7 +13,16 @@ Rewritten methodology (2026-07-19):
    GPU util/power sampling; setup/compile excluded from timing.
 
 Hardware: NVIDIA H100 64GB (MareNostrum 5, BSC), torch 2.11.0+cu128.
-Historical exploration (v1 report, superseded): `archive_v1/`.
+Historical exploration (v1, superseded; full multi-variable sweeps incl.
+modalities/scale/distributed/serving-stack comparisons): in git history
+before the "Clean slate for report v2" commit.
+
+Planned table roadmap (each confirmed with the user before running; single
+variable each): 1 compute precision ✔ · 2 QAT scheme · 3 model scale
+(GPU-doubling on OOM) · 4 inference precision (+logit fidelity) ·
+5 fusion level (eager/compile/attention backend) · 6 distributed layout
+(FSDP/TP, single/multi-node) · 7 serving stack (eager/torchao/vLLM) ·
+8 modality. Roadmap covers every axis of the original goal.
 
 ## Table 1 — Training compute precision
 

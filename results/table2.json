@@ -1,0 +1,24 @@
+{
+  "table": "2: QAT fake-quant scheme",
+  "pinned": "Qwen2.5-1.5B, 1xH100, bs=4, seq=1024, AdamW fp32-states, eager, bf16-autocast base",
+  "gpu": "NVIDIA H100",
+  "records": [
+    {
+      "scheme": "none",
+      "ok": true,
+      "replaced_linears": 0,
+      "ms_per_step_median": 280.96772264689207,
+      "tokens_per_s": 14578.186993912013,
+      "peak_mem_gib": 39.89921569824219,
+      "loss_first": 12.2458,
+      "loss_step30": 0.2194,
+      "gpu_util_avg": 95.4,
+      "gpu_util_min": 17.0,
+      "power_w_avg": 393.7,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 29,
+      "update_cos_vs_bf16": 1.0,
+      "update_rel_err_vs_bf16": 0.0
+    }
+  ]
+}
