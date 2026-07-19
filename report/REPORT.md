@@ -350,6 +350,25 @@ precision effect of §7.8(b) again, now at the bf16-vs-fp32 boundary.
 (4) Muon's memory is competitive but its naive NS step is 2.4× slower at
 bs=1; its niche vs low-bit Adam is optimizer-quality, not economics.
 
+
+**Why "8-bit training is faster" for big models — the memory→throughput
+exchange, quantified** (7B, batch-size sweep, `mem_lowbit7b_bs*.json`):
+
+| optimizer states | bs=1 | bs=2 | bs=4 | bs=8 |
+|---|---:|---:|---:|---:|
+| bf16 (30.5 GB states) | OOM | OOM | OOM | OOM |
+| **FP8 states** | 4 704 | 6 330 | **7 650** | OOM (activations) |
+| INT8 states | 3 588 | 5 233 | 6 792 | OOM |
+
+The FP8-state codec is *slower per element* than bf16 (§ above), but the
+~12 GB it frees buys batch size, and batching amortizes every fixed per-step
+cost: **+63% throughput for FP8-states from bs=1→4, while the bf16-state
+recipe cannot run at any batch size**. This — plus FP8 GEMM/communication at
+scale (DeepSeek-V3-style compute-FP8) and avoided
+checkpointing/offload/extra-parallelism — is where the "low-bit training is
+faster on large models" folklore actually comes from; it is a systems-level
+exchange, never an elementwise-kernel speedup.
+
 **(b) Trainable master weights have a hard precision floor.** If the stored
 weights themselves are quantized after every update ("权重也转换为相应精度"),
 the update (~lr ≈ 1e-5) must survive the quantization step

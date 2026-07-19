@@ -1,0 +1,85 @@
+{
+  "model": "Qwen2.5-7B (random init)",
+  "gpu": "NVIDIA H100",
+  "gpu_mem_gib": 63.43011474609375,
+  "records": [
+    {
+      "variant": "adamw_fp32",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 62.667136669158936,
+      "reserved_at_oom_gib": 62.671875,
+      "tried_to_allocate": "130.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "adamw_pure_bf16",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 56.80433464050293,
+      "reserved_at_oom_gib": 62.603515625,
+      "tried_to_allocate": "130.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "adamw8bit_pure_bf16",
+      "ok": true,
+      "batch_size": 4,
+      "ms_per_step_median": 603.0539493076503,
+      "tokens_per_s": 6792.095474546689,
+      "peak_mem_gib": 59.80274534225464,
+      "loss_first": 12.685810089111328,
+      "loss_last": 0.12646900117397308,
+      "gpu_util_avg": 99.7,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 585.8,
+      "sm_clock_mhz_avg": 1962,
+      "util_samples": 60
+    },
+    {
+      "variant": "adamw4bit_pure_bf16",
+      "ok": true,
+      "batch_size": 4,
+      "ms_per_step_median": 747.953581623733,
+      "tokens_per_s": 5476.275668214584,
+      "peak_mem_gib": 52.9319052696228,
+      "loss_first": 12.685810089111328,
+      "loss_last": 1.3314533233642578,
+      "gpu_util_avg": 99.7,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 539.3,
+      "sm_clock_mhz_avg": 1961,
+      "util_samples": 74
+    },
+    {
+      "variant": "adamwfp8_pure_bf16",
+      "ok": true,
+      "batch_size": 4,
+      "ms_per_step_median": 535.4549698531628,
+      "tokens_per_s": 7649.569488771841,
+      "peak_mem_gib": 59.80236768722534,
+      "loss_first": 12.685810089111328,
+      "loss_last": 0.13360628485679626,
+      "gpu_util_avg": 99.6,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 588.9,
+      "sm_clock_mhz_avg": 1953,
+      "util_samples": 53
+    },
+    {
+      "variant": "muon_pure_bf16",
+      "ok": true,
+      "batch_size": 4,
+      "ms_per_step_median": 1737.4038775451481,
+      "tokens_per_s": 2357.540496448881,
+      "peak_mem_gib": 61.61100721359253,
+      "loss_first": 12.685810089111328,
+      "loss_last": 1.3138781785964966,
+      "gpu_util_avg": 99.9,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 632.1,
+      "sm_clock_mhz_avg": 1946,
+      "util_samples": 170
+    }
+  ]
+}
