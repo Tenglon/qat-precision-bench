@@ -1,0 +1,28 @@
+{
+  "model": "/gpfs/scratch/ehpc821/tlong/qat_bench/models/Qwen2.5-7B-Instruct",
+  "records": [
+    {
+      "variant": "tp4_fp32_autocast",
+      "ok": true,
+      "tp_size": 4,
+      "nodes": 1,
+      "batch_size": 1,
+      "ms_per_step_median": 232.27917868644,
+      "tokens_per_s": 4408.488121022357,
+      "tokens_per_s_per_gpu": 1102.1220302555892,
+      "peak_mem_gib_per_rank": [
+        38.88,
+        38.88,
+        38.88,
+        38.88
+      ],
+      "loss_first": 13.808853149414062,
+      "loss_last": 0.23557138442993164,
+      "gpu_util_avg": 98.9,
+      "gpu_util_min": 95.0,
+      "power_w_avg": 334.8,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 88
+    }
+  ]
+}

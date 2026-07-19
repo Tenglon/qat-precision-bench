@@ -1,0 +1,104 @@
+{
+  "stack": "torchao+compile",
+  "records": [
+    {
+      "mode": "infer_bs16",
+      "variant": "bf16",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 115.0557966902852,
+      "tokens_per_s": 142400.47412911782,
+      "gpu_util_avg": 99.9,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 666.8,
+      "sm_clock_mhz_avg": 1862,
+      "util_samples": 9
+    },
+    {
+      "mode": "decode_bs1",
+      "variant": "bf16",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 798.4415958635509,
+      "tokens_per_s": 160.3122891682042,
+      "gpu_util_avg": 69.7,
+      "gpu_util_min": 67.0,
+      "power_w_avg": 188.2,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 20
+    },
+    {
+      "mode": "decode_bs32",
+      "variant": "bf16",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 961.3547348417342,
+      "tokens_per_s": 4260.654107741318,
+      "gpu_util_avg": 87.3,
+      "gpu_util_min": 86.0,
+      "power_w_avg": 259.6,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 24
+    },
+    {
+      "mode": "infer_bs16",
+      "variant": "int8da",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 156.02167090401053,
+      "tokens_per_s": 105011.05330476786,
+      "gpu_util_avg": 97.5,
+      "gpu_util_min": 96.0,
+      "power_w_avg": 613.9,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 12
+    },
+    {
+      "variant": "int4wo",
+      "scale_b": "1.5",
+      "ok": false,
+      "error": "_bench/code/bench/route1_torchao_bench.py\", line 64, in apply_torchao\n    quantize_(model, cfgs[variant])\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 445, in quantize_\n    _replace_with_custom_fn_if_matches_filter(\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 179, in _replace_with_custom_fn_if_matches_filter\n    new_child = _replace_with_custom_fn_if_matches_filter(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 179, in _replace_with_custom_fn_if_matches_filter\n    new_child = _replace_with_custom_fn_if_matches_filter(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 179, in _replace_with_custom_fn_if_matches_filter\n    new_child = _replace_with_custom_fn_if_matches_filter(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  [Previous line repeated 2 more times]\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 174, in _replace_with_custom_fn_if_matches_filter\n    model = replacement_fn(model, *extra_args)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 806, in _int4_weight_only_transform\n    new_weight = _int4_weight_only_quantize_tensor(\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/gpfs/scratch/ehpc821/tlong/qat_bench/venv_vllm/lib/python3.12/site-packages/torchao/quantization/quant_api.py\", line 752, in _int4_weight_only_quantize_tensor\n    assert config.version == 2\n           ^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+    },
+    {
+      "mode": "infer_bs16",
+      "variant": "fp8dyn",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 101.74613585695624,
+      "tokens_per_s": 161028.22836470255,
+      "gpu_util_avg": 98.0,
+      "gpu_util_min": 97.0,
+      "power_w_avg": 581.0,
+      "sm_clock_mhz_avg": 1976,
+      "util_samples": 8
+    },
+    {
+      "mode": "decode_bs1",
+      "variant": "fp8dyn",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 1093.5237249359488,
+      "tokens_per_s": 117.05278731606612,
+      "gpu_util_avg": 42.6,
+      "gpu_util_min": 42.0,
+      "power_w_avg": 149.2,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 28
+    },
+    {
+      "mode": "decode_bs32",
+      "variant": "fp8dyn",
+      "scale_b": "1.5",
+      "ok": true,
+      "ms": 1330.8404027484357,
+      "tokens_per_s": 3077.754471190527,
+      "gpu_util_avg": 59.7,
+      "gpu_util_min": 58.0,
+      "power_w_avg": 198.6,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 33
+    }
+  ],
+  "torchao_version": "0.17.0+cu128",
+  "torch_version": "2.11.0+cu128"
+}

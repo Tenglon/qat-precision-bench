@@ -1,0 +1,90 @@
+{
+  "table": "5: fusion level",
+  "pinned": "Qwen2.5-1.5B, 1xH100, bf16, train bs=4 / infer bs=16",
+  "records": [
+    {
+      "level": "eager",
+      "mode": "train",
+      "ok": true,
+      "batch_size": 4,
+      "ms_median": 280.32466513104737,
+      "tokens_per_s": 14611.628977012011,
+      "peak_mem_gib": 39.89921569824219,
+      "gpu_util_avg": 99.3,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 422.9,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 28
+    },
+    {
+      "level": "compile",
+      "mode": "train",
+      "ok": true,
+      "batch_size": 4,
+      "ms_median": 204.7791015356779,
+      "tokens_per_s": 20002.04107393434,
+      "peak_mem_gib": 32.729599952697754,
+      "gpu_util_avg": 99.3,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 475.6,
+      "sm_clock_mhz_avg": 1979,
+      "util_samples": 20
+    },
+    {
+      "level": "compile_cudnn_attn",
+      "mode": "train",
+      "ok": true,
+      "batch_size": 4,
+      "ms_median": 204.83080972917378,
+      "tokens_per_s": 19996.991689949915,
+      "peak_mem_gib": 32.729599952697754,
+      "gpu_util_avg": 99.3,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 468.0,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 20
+    },
+    {
+      "level": "eager",
+      "mode": "infer",
+      "ok": true,
+      "batch_size": 16,
+      "ms_median": 161.4639286417514,
+      "tokens_per_s": 101471.58029551015,
+      "peak_mem_gib": 7.622707366943359,
+      "gpu_util_avg": 99.9,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 580.0,
+      "sm_clock_mhz_avg": 1965,
+      "util_samples": 16
+    },
+    {
+      "level": "compile",
+      "mode": "infer",
+      "ok": true,
+      "batch_size": 16,
+      "ms_median": 115.54901045747101,
+      "tokens_per_s": 141792.64655866782,
+      "peak_mem_gib": 7.622707366943359,
+      "gpu_util_avg": 99.9,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 665.0,
+      "sm_clock_mhz_avg": 1850,
+      "util_samples": 12
+    },
+    {
+      "level": "compile_cudnn_attn",
+      "mode": "infer",
+      "ok": true,
+      "batch_size": 16,
+      "ms_median": 115.64002861268818,
+      "tokens_per_s": 141681.04415534818,
+      "peak_mem_gib": 7.622707366943359,
+      "gpu_util_avg": 99.9,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 666.9,
+      "sm_clock_mhz_avg": 1835,
+      "util_samples": 12
+    }
+  ]
+}

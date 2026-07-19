@@ -40,7 +40,7 @@ def run(scheme, spec, steps_timed=20, steps_numerics=30, bs=4):
     if scheme != "none":
         replaced, _ = swap_linears(model, scheme)
     w_init = {n: p.detach().float().cpu().clone()
-              for n, p in model.named_parameters()}
+              for n, p in model.named_parameters()}   # keys pre-normalization
     model.train()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-5, foreach=True)
     torch.manual_seed(23)
@@ -57,7 +57,9 @@ def run(scheme, spec, steps_timed=20, steps_numerics=30, bs=4):
 
     for _ in range(steps_numerics):
         step()
-    dW = {n: (p.detach().float().cpu() - w_init[n])
+    # QAT swap nests originals as `.lin.`; normalize names so dW keys match
+    # across schemes
+    dW = {n.replace(".lin.", "."): (p.detach().float().cpu() - w_init[n])
           for n, p in model.named_parameters()}
 
     times = []
