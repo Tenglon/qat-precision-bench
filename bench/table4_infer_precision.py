@@ -57,11 +57,12 @@ def main():
     ap.add_argument("--bs", type=int, default=16)
     ap.add_argument("--fused", action="store_true",
                     help="torch.compile every non-fp32 precision")
+    ap.add_argument("--modality", default="lang")
     args = ap.parse_args()
-    spec = get_spec("lang")
+    spec = get_spec(args.modality)
     result = {"table": "4b: inference precision (fused)" if args.fused
               else "4: inference precision",
-              "pinned": "Qwen2.5-1.5B, 1xH100, batch fwd bs=16, seq=1024, eager",
+              "pinned": f"{spec.desc}, 1xH100, batch fwd bs=16, seq=1024",
               "gpu": torch.cuda.get_device_name(0), "records": []}
     ref_logits = None
     for p in PRECISIONS:

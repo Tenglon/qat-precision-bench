@@ -124,6 +124,29 @@ unfused dequant temporaries) collapses to 17 GiB under compile.
 (kernel-level 2.5×, v1 finding) — CUTLASS-class kernels (vLLM) are needed
 to go further. (4) Fidelity is stack-independent (same math, same cos).
 
+
+### Table 4c — Same design at 3B, fused only
+
+**Pinned**: Qwen2.5-3B, 1×H100, bs=16, seq=1024, `torch.compile`
+(fp32 row = eager baseline). **Variable**: precision.
+
+| precision | ms/fwd | speedup | peak GiB | util | logit cos | rel-err |
+|---|---:|---:|---:|---:|---:|---:|
+| `fp32` | 2496.8 | 1.00× | 20.9 | 100.0% | 1.0000 | 0.0000 |
+| `tf32` | 552.4 | 4.52× | 21.5 | 100.0% | 1.0000 | 0.0126 |
+| `bf16` | 209.8 | 11.90× | 13.3 | 100.0% | 0.9622 | 1.0428 |
+| `fp16` | 215.1 | 11.61× | 13.3 | 100.0% | 0.9990 | 0.1705 |
+| `fp8` | 177.2 | 14.09× | 13.3 | 99.8% | 0.8482 | 2.3075 |
+| `int8` | 900.1 | 2.77× | 18.6 | 100.0% | 0.9385 | 1.4548 |
+| `int4` | 3344.4 | 0.75× | 13.3 | 100.0% | 0.4937 | 3.8869 |
+
+Scale drift vs Table 4's 1.5B-fused columns: fp8 12.31×→**14.09×**, bf16
+11.22×→11.90×, tf32 4.20×→4.52× — compute-bound speedups keep widening with
+model size. Fidelity moves the other way: deeper nets accumulate quant error
+(fp8 cos 0.926→0.848, int4 0.652→0.494, and notably bf16 0.990→0.962 while
+fp16 stays 0.999) — the precision you can afford at deployment shrinks as
+the model grows, which raises QAT's importance at scale.
+
 ## Table 5 — Fusion level
 
 **Pinned**: 1.5B, bf16, 1×H100. **Variable**: eager / compile / +cuDNN attn.
