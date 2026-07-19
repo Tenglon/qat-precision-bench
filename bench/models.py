@@ -120,6 +120,16 @@ def _lang3():
                         "Qwen2.5-3B (random init)", train_bs=4)
 
 
+def _lang14():
+    return _lang_family("lang_qwen2.5-14b.json", "lang14",
+                        "Qwen2.5-14B (random init)", train_bs=1)
+
+
+def _lang32():
+    return _lang_family("lang_qwen2.5-32b.json", "lang32",
+                        "Qwen2.5-32B (random init)", train_bs=1)
+
+
 def _lang7():
     # NOTE: full AdamW training (16 B/param of fp32 state) cannot fit 7B on a
     # 64 GB GPU in ANY compute precision — train records will show OOM, which
@@ -263,7 +273,8 @@ class Spec:
 
 BUILDERS = {"lang": _lang, "image": _image, "video": _video,
             "audio": _audio, "mm": _mm,
-            "lang05": _lang05, "lang3": _lang3, "lang7": _lang7}
+            "lang05": _lang05, "lang3": _lang3, "lang7": _lang7,
+            "lang14": _lang14, "lang32": _lang32}
 
 
 def get_spec(name: str) -> Spec:

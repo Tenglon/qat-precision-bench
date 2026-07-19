@@ -1,0 +1,30 @@
+{
+  "model": "Qwen2.5-14B (random init)",
+  "gpu": "NVIDIA H100",
+  "records": [
+    {
+      "variant": "fsdp_pure_bf16_4gpu",
+      "ok": true,
+      "recipe": "pure_bf16",
+      "grad_ckpt": false,
+      "modality": "lang14",
+      "world_size": 4,
+      "per_rank_bs": 1,
+      "ms_per_step_median": 635.9130800701678,
+      "tokens_per_s_aggregate": 6441.131859637232,
+      "peak_mem_gib_per_rank": [
+        36.85,
+        36.85,
+        36.85,
+        36.85
+      ],
+      "loss_first": 12.978684425354004,
+      "loss_last": 0.004190791863948107,
+      "gpu_util_avg": 99.6,
+      "gpu_util_min": 96.0,
+      "power_w_avg": 470.5,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 244
+    }
+  ]
+}

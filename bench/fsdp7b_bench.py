@@ -34,6 +34,12 @@ def main():
     ap.add_argument("--modality", default="lang7")
     ap.add_argument("--bs", type=int, default=1, help="per-rank batch size")
     ap.add_argument("--steps", type=int, default=20)
+    ap.add_argument("--recipe", default="std",
+                    choices=["std", "pure_bf16", "pure_bf16_fp8opt"],
+                    help="std: fp32 master + bf16 autocast AdamW; pure_bf16: "
+                         "bf16 storage everywhere; pure_bf16_fp8opt: bf16 + "
+                         "torchao AdamWFp8 states")
+    ap.add_argument("--grad-ckpt", action="store_true")
     args = ap.parse_args()
 
     dist.init_process_group("nccl")
@@ -48,20 +54,42 @@ def main():
     from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer
 
     spec = get_spec(args.modality)
-    model = spec.build()  # fp32 on this rank's GPU
+    # 14B/32B cannot even be BUILT on one 64GB GPU pre-sharding; build on CPU
+    # (node RAM) and let FSDP move shards to the GPU unit by unit
+    import models as _models
+    big = args.modality in ("lang14", "lang32")
+    if big:
+        _models.DEVICE = "cpu"
+    model = spec.build()
+    if big:
+        _models.DEVICE = "cuda"   # batches must still be created on GPU
+    if args.recipe.startswith("pure_bf16"):
+        model = model.to(torch.bfloat16)   # bf16 flat shards, no fp32 master
+    if args.grad_ckpt:
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False})
     wrap = functools.partial(transformer_auto_wrap_policy,
                              transformer_layer_cls={Qwen2DecoderLayer})
+    mp = (MixedPrecision(param_dtype=torch.bfloat16,
+                         reduce_dtype=torch.bfloat16,
+                         buffer_dtype=torch.bfloat16)
+          if args.recipe == "std" else None)
     model = FSDP(
         model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=wrap,
-        mixed_precision=MixedPrecision(param_dtype=torch.bfloat16,
-                                       reduce_dtype=torch.bfloat16,
-                                       buffer_dtype=torch.bfloat16),
+        mixed_precision=mp,
         device_id=local,
         use_orig_params=True,
     )
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-5, foreach=True)
+    if args.recipe == "pure_bf16_fp8opt":
+        try:
+            from torchao.optim import AdamWFp8
+        except ImportError:
+            from torchao.prototype.low_bit_optim import AdamWFp8
+        opt = AdamWFp8(model.parameters(), lr=1e-5)
+    else:
+        opt = torch.optim.AdamW(model.parameters(), lr=1e-5, foreach=True)
     torch.manual_seed(100 + rank)
     batch = spec.make_batch(args.bs, train=True)
     losses = []
@@ -93,7 +121,9 @@ def main():
 
     if rank == 0:
         rec = {
-            "variant": f"fsdp_adamw_{world}gpu", "ok": True,
+            "variant": f"fsdp_{args.recipe}_{world}gpu", "ok": True,
+            "recipe": args.recipe, "grad_ckpt": args.grad_ckpt,
+            "modality": args.modality,
             "world_size": world, "per_rank_bs": args.bs,
             "ms_per_step_median": med * 1e3,
             "tokens_per_s_aggregate": world * args.bs * spec.tokens_per_sample / med,
