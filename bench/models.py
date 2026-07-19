@@ -79,11 +79,11 @@ def _build_on_gpu(cls, cfg, attn="sdpa"):
 
 # ---------------------------------------------------------------- language
 
-def _lang():
+def _lang_family(cfg_file, label, desc, train_bs=8, infer_bs=16):
     ov = {"use_cache": False}
     if TINY:
         ov["vocab_size"] = 8192
-    cfg = _load_cfg("lang_qwen2.5-1.5b.json", **ov)
+    cfg = _load_cfg(cfg_file, **ov)
     seq = 128 if TINY else 1024
 
     def build():
@@ -100,8 +100,32 @@ def _lang():
             batch["labels"] = ids.clone()
         return batch
 
-    return Spec("lang", "Qwen2.5-1.5B (random init)", build, make_batch,
-                tokens_per_sample=seq, train_bs=8, infer_bs=16, supports_decode=True)
+    return Spec(label, desc, build, make_batch,
+                tokens_per_sample=seq, train_bs=train_bs, infer_bs=infer_bs,
+                supports_decode=True)
+
+
+def _lang():
+    return _lang_family("lang_qwen2.5-1.5b.json", "lang",
+                        "Qwen2.5-1.5B (random init)")
+
+
+def _lang05():
+    return _lang_family("lang_qwen2.5-0.5b.json", "lang05",
+                        "Qwen2.5-0.5B (random init)", train_bs=16)
+
+
+def _lang3():
+    return _lang_family("lang_qwen2.5-3b.json", "lang3",
+                        "Qwen2.5-3B (random init)", train_bs=4)
+
+
+def _lang7():
+    # NOTE: full AdamW training (16 B/param of fp32 state) cannot fit 7B on a
+    # 64 GB GPU in ANY compute precision — train records will show OOM, which
+    # is itself the finding. Inference/decode run fine.
+    return _lang_family("lang_qwen2.5-7b.json", "lang7",
+                        "Qwen2.5-7B (random init)", train_bs=1)
 
 
 # ---------------------------------------------------------------- image
@@ -238,7 +262,8 @@ class Spec:
 
 
 BUILDERS = {"lang": _lang, "image": _image, "video": _video,
-            "audio": _audio, "mm": _mm}
+            "audio": _audio, "mm": _mm,
+            "lang05": _lang05, "lang3": _lang3, "lang7": _lang7}
 
 
 def get_spec(name: str) -> Spec:

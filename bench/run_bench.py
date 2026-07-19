@@ -26,6 +26,7 @@ import traceback
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gpuutil import GpuSampler  # noqa: E402
 from models import get_spec  # noqa: E402
 from quant import swap_linears  # noqa: E402
 
@@ -54,16 +55,18 @@ def cast_batch(batch, dtype):
 
 
 def timed(fn, warmup, iters):
+    """Times ONLY the steady-state loop; samples GPU util inside the window."""
     for _ in range(warmup):
         fn()
     torch.cuda.synchronize()
     times = []
-    for _ in range(iters):
-        t0 = time.perf_counter()
-        fn()
-        torch.cuda.synchronize()
-        times.append(time.perf_counter() - t0)
-    return times
+    with GpuSampler() as g:
+        for _ in range(iters):
+            t0 = time.perf_counter()
+            fn()
+            torch.cuda.synchronize()
+            times.append(time.perf_counter() - t0)
+    return times, g.stats()
 
 
 def free_cuda(*objs):
@@ -100,10 +103,11 @@ def bench_train(spec, precision, bs, steps, warmup):
         scaler.update()
         losses.append(float(loss.detach()))
 
-    times = timed(step, warmup, steps)
+    times, gpu = timed(step, warmup, steps)
     med = statistics.median(times)
     rec = {
         "mode": "train", "precision": precision, "batch_size": bs, "ok": True,
+        **gpu,
         "ms_per_iter_median": med * 1e3,
         "ms_per_iter_mean": statistics.mean(times) * 1e3,
         "samples_per_s": bs / med,
@@ -150,7 +154,7 @@ def bench_infer(spec, precision, bs, steps, warmup, ref_logits):
         with torch.inference_mode():
             model(**batch)
 
-    times = timed(step, warmup, steps)
+    times, gpu = timed(step, warmup, steps)
     med = statistics.median(times)
 
     # quality probe vs fp32 logits on a tiny fixed batch
@@ -164,6 +168,7 @@ def bench_infer(spec, precision, bs, steps, warmup, ref_logits):
             lg, ref_logits.flatten(), dim=0))
     rec = {
         "mode": "infer", "precision": precision, "batch_size": bs, "ok": True,
+        **gpu,
         "ms_per_iter_median": med * 1e3,
         "ms_per_iter_mean": statistics.mean(times) * 1e3,
         "samples_per_s": bs / med,
@@ -201,11 +206,12 @@ def bench_decode(spec, precision, bs, new_tokens=128):
             model.generate(prompt, max_new_tokens=new_tokens,
                            min_new_tokens=new_tokens, do_sample=False)
 
-    times = timed(gen, 2, 5)
+    times, gpu = timed(gen, 2, 5)
     med = statistics.median(times)
     rec = {
         "mode": f"decode_bs{bs}", "precision": precision, "batch_size": bs,
         "ok": True,
+        **gpu,
         "ms_per_iter_median": med * 1e3,
         "tokens_per_s": bs * new_tokens / med,
         "samples_per_s": bs / med,
@@ -257,7 +263,8 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--modality", required=True,
-                    choices=["lang", "image", "video", "audio", "mm"])
+                    choices=["lang", "image", "video", "audio", "mm",
+                             "lang05", "lang3", "lang7"])
     ap.add_argument("--out", required=True)
     ap.add_argument("--steps", type=int, default=20)
     ap.add_argument("--warmup", type=int, default=5)
@@ -300,7 +307,16 @@ def main():
             json.dump({"header": header, "records": records}, f, indent=2)
 
     if not args.skip_train:
-        train_bs = args.train_bs or find_train_bs(spec, spec.train_bs)
+        if args.train_bs:
+            train_bs = args.train_bs
+        else:
+            try:
+                train_bs = find_train_bs(spec, spec.train_bs)
+            except (RuntimeError, torch.OutOfMemoryError):
+                # optimizer state alone may exceed the GPU (e.g. 7B + AdamW);
+                # keep going — each precision will record its own OOM
+                free_cuda()
+                train_bs = spec.train_bs
         print(f"== train batch size: {train_bs}", flush=True)
         for p in TRAIN_PRECISIONS:
             run(("train", p), bench_train, spec, p, train_bs,

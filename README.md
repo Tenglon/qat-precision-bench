@@ -9,16 +9,21 @@ NVIDIA H100 (MareNostrum 5, BSC).**
 
 📊 **Results & analysis: [report/REPORT.md](report/REPORT.md)** (English + 中文结论)
 
-## Headline results (speedup vs FP32, H100, stock PyTorch eager)
+## Headline results (speedup vs FP32, H100)
 
-| Precision | GEMM ceiling | Training e2e | Batch inference e2e | LLM decode bs=32 |
-|---|---:|---:|---:|---:|
-| TF32 | 5.5–7.5× | 1.7–2.4× | 2.4–3.2× | 1.25× |
-| BF16 | 13–15× | 1.9–5.4× (typ ~3.8×) | 4.7–9.2× | 1.94× |
-| FP16 | 12–15× | ≈ BF16 | ≈ BF16 | 1.83× |
-| FP8 | 19–24× | 2.0–2.6× (naive) | 2.6–3.8× | 0.87× |
-| INT8 | 2.5× (stock torch) | QAT: 2.2–3.1× | 1.0–1.3× | 0.63× |
-| INT4 | 3.6× (small M only) | QAT: 2.2–3.1× | 0.6–0.8× | 1.42× |
+| Precision | GEMM ceiling | Training e2e | Infer floor (eager) | Infer realized (compile / vLLM) |
+|---|---:|---:|---:|---|
+| TF32 | 5.5-7.5x | 1.7-2.4x | 2.4-3.2x | - |
+| BF16 | 13-15x | 1.9-5.4x (typ ~3.8x) | 4.7-10.2x | stack reference |
+| FP16 | 12-15x | = BF16 | = BF16 | - |
+| FP8 | 19-24x | 2.0-2.6x (naive) | 2.6-3.8x | beats BF16 w/ compile; 1.66x over BF16 in vLLM 7B decode |
+| INT8 | 2.5x (stock torch) | QAT: 2.2-3.1x | 1.0-1.3x | 1.40x over BF16 (vLLM 7B decode) |
+| INT4 | 3.6x (small M) | QAT: 2.2-3.1x | 0.6-0.8x | 1.82x over BF16 (vLLM AWQ 7B decode) |
+
+Scale sweep (Qwen2.5 0.5B->7B) and route comparison (eager vs torch.compile
+vs torchao vs vLLM) show low-precision benefit **grows with model scale** and
+that **stack choice dwarfs precision choice** (eager-BF16 -> vLLM-INT4 = 6x
+at 7B decode). Every measurement carries in-window GPU util/power proof.
 
 QAT itself never accelerates training (it costs 1.5–1.7× vs BF16); its payoff
 is quantized deployment. Full nuance in the report.
