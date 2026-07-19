@@ -57,34 +57,46 @@ Findings:
 
 ## Table 2 — QAT fake-quant scheme (training)
 
-**Pinned**: as Table 1 but bf16-autocast base. **Variable**: fake-quant scheme.
-**Numerics**: ΔW vs the *bf16 baseline* (isolates QAT's own perturbation;
-Table 1 already covers bf16 vs fp32).
+**Pinned**: as Table 1 but bf16-autocast base, bs=4. **Variable**: fake-quant
+scheme (STE, per-channel weights + per-token int8 acts; fp8 via e4m3 casts).
+**Numerics**: ΔW vs the *bf16 baseline* — isolating QAT's own perturbation.
 
-*(pending)*
+| scheme | ms/step | vs bf16 | peak mem | util / power | ΔW cos vs bf16 | ΔW rel-err | loss@30 |
+|---|---:|---:|---:|---|---:|---:|---:|
+| `none` | 281.1 | 1.00× | 39.9 GiB | 95.0% / 390.2 W | 1.000000 | 0.0000 | 0.2196 |
+| `fp8_qat` | 435.3 | 0.65× | 40.2 GiB | 96.8% / 372.0 W | 0.848177 | 0.5485 | 0.2945 |
+| `int8_qat` | 428.4 | 0.66× | 40.2 GiB | 97.2% / 367.8 W | 0.966034 | 0.2609 | 0.1492 |
+| `int4_qat` | 428.2 | 0.66× | 40.2 GiB | 97.8% / 364.2 W | 0.252217 | 1.2202 | 0.3611 |
 
-*(rerunning after a key-normalization bug; the v1 measurement of the same
-configuration found QAT costs ×1.5–1.7 vs bf16 eager and ≈×1.0 under compile.)*
+Findings: (1) QAT costs ×1.52 over bf16 regardless of bit-width (the fake
+quant is the same round/clamp math). (2) The numerics column now QUANTIFIES
+what QAT does to optimization: int8 fake-quant only mildly bends the update
+(cos 0.966), fp8 more (0.848), while **int4 rotates it almost orthogonal
+(cos 0.252)** — QAT is not "the same training but noisier", it is descent on
+a different (quantized) loss landscape, and at 4 bits that landscape is far
+from the fp one. That is simultaneously why int4 PTQ fails (Table 4:
+logit-cos 0.65) and why int4 QAT needs longer schedules to converge
+(loss@30 = 0.361 vs baseline 0.220).
 
 ## Table 3 — Model scale (no-OOM rule in action)
 
 **Pinned**: bf16-autocast + AdamW fp32-states, global batch 4×1024 tokens
-(8×1024 at 14B where 8 ranks force it), eager. **Variable**: model size;
-GPU count escalates 1→2→4→8 per the no-OOM rule.
+(8×1024 at 14B where 8 ranks force it), eager/FSDP-std.
+**Variable**: model size; GPUs escalate per the no-OOM rule.
 
 | model | GPUs | tokens/step | ms/step | agg tokens/s | peak/rank | util |
 |---|---:|---:|---:|---:|---:|---:|
 | 0.5B | 1 | 4096 | 126.2 | 32462 | 19.57 GiB | 98.3% |
 | 1.5B | 1 | 4096 | 280.7 | 14591 | 39.9 GiB | 99.2% |
-| 3B | *(pending)* | | | | |
+| 3B | 2 | 4096 | 308.8 | 13263 | 30.47 GiB | 99.3% |
 | 7B | 4 | 4096 | 403.8 | 10143 | 35.53 GiB | 99.3% |
 | 14B | 8 | 8192 | 1056.0 | 7757 | 36.85 GiB | 98.9% |
 
-Findings: per-token cost grows ~linearly with parameters once util is pinned
-at ~99% (0.5B→14B = 65× params, 4.2× fewer tokens/s *aggregate* while GPUs
-grew 8×). The GPU column IS the memory story: 3B fits 1 GPU only below bs=4
-(OOM at bs=4 → escalated to 2), 7B needs 4 (2 proven insufficient in v1),
-14B needs 8 across 2 nodes.
+Findings: per-token cost grows ~linearly with parameters at pinned ~99%
+util. The GPU column IS the memory story: 3B OOMs at bs=4 on 1 GPU →
+2 GPUs; 7B needs 4 (2 proven insufficient in v1); 14B needs 8 across
+2 nodes. Aggregate throughput still degrades 4.2× from 0.5B to 14B while
+hardware grew 8× — parameters outpace parallelism.
 
 ## Table 4 — Inference precision (+ logit fidelity)
 
@@ -100,11 +112,11 @@ grew 8×). The GPU column IS the memory story: 3B fits 1 GPU only below bs=4
 | `int8` | 1014.0 | 1.28× | 100.0% / 373.0 W | 0.9778 | 0.8775 |
 | `int4` | 1669.9 | 0.78× | 100.0% / 375.6 W | 0.6520 | 3.2868 |
 
-Findings: (1) bf16/fp16 ~8× and numerically benign — but note fp16's logit
-error is 6× smaller than bf16's (mantissa again, echoing Table 1).
-(2) Real quantized kernels lose to bf16 in eager (fp8 3.83×, int8 1.28×,
-int4 0.78×) — stack matters (Table 7). (3) Fidelity cliff: int4 RTN logit
-cosine 0.652 — this is the accuracy QAT (Table 2) exists to recover.
+Findings: (1) bf16/fp16 ~8×; fp16's logit error is 6× smaller than bf16's
+(mantissa, echoing Table 1). (2) Real quantized kernels lose to bf16 in
+eager (fp8 3.83×, int8 1.28×, int4 0.78×) — stack matters (Table 7).
+(3) Fidelity cliff: int4 RTN logit cosine 0.652 — the accuracy QAT
+(Table 2) exists to recover.
 
 ## Table 5 — Fusion level
 
@@ -120,8 +132,8 @@ cosine 0.652 — this is the accuracy QAT (Table 2) exists to recover.
 | infer | `compile_cudnn_attn` | 115.6 | 1.40× | 141681 | 99.9% |
 
 Findings: compile = +37% train / +40% infer. cuDNN fused attention adds ~0
-at this scale — SDPA's default flash backend is already near-optimal for
-bs≤16, seq 1024; attention is a small slice of a 1.5B step.
+here — SDPA's default backend is already near-optimal at bs≤16/seq1024, and
+attention is a small slice of a 1.5B step.
 
 ## Table 6 — Distributed layout (fixed world=4, 7B, std recipe)
 
@@ -134,19 +146,16 @@ bs≤16, seq 1024; attention is a small slice of a 1.5B step.
 | FSDP, 2+2 across 2 nodes | 938.6 | 4364 | 35.53 GiB | 99.8% |
 | TP=4, 2+2 across 2 nodes | 315.1 | 3250 | 38.88 GiB | 99.3% |
 
-Findings: (1) at equal GPU count, FSDP beats TP 2.3× on aggregate throughput
-(TP co-processes one stream, paying per-layer all-reduces; FSDP runs 4).
-(2) Crossing nodes costs FSDP −57% (938 ms vs 404 — all-gather over IB with
-only 2 GPUs/node to overlap) but TP only −26% (315 vs 232 ms): with 2+2
-placement FSDP's full weight traffic crosses the wire while TP moves only
-activations. Layout and placement interact — neither is universally "the"
-answer; hence TP-in-node × DP-across in production.
-(3) TP per-step latency (232 ms) is ~1.7× better than FSDP's (404 ms) —
-TP's actual niche: latency and memory, not throughput.
+Findings: (1) equal GPUs: FSDP beats TP 2.3× on aggregate throughput (TP
+co-processes one stream, paying per-layer all-reduces; FSDP runs 4).
+(2) Crossing nodes: FSDP −57% (weights cross the wire), TP −26%
+(only activations do) — layout × placement interact; production uses
+TP-in-node × DP-across. (3) TP's step latency (232 vs 404 ms) is its real
+niche: latency and memory, not throughput.
 
 ## Table 7 — Serving/compile stack (bf16 pinned)
 
-**Pinned**: 1.5B, bf16, 1×H100, prompt 128 + 128 new tokens for decode.
+**Pinned**: 1.5B, bf16, 1×H100, prompt 128 + 128 new for decode.
 
 | stack (1.5B, bf16 pinned) | batch fwd / prefill tok/s | decode bs=1 | decode bs=32 |
 |---|---:|---:|---:|
@@ -154,18 +163,15 @@ TP's actual niche: latency and memory, not throughput.
 | torchao+compile | 142400 | 160 | 4261 |
 | vLLM | 807473 | 293 | 8633 |
 
-Findings: stack alone (no precision change) is worth 1.4×/1.6×/1.4× (fwd,
-dec1, dec32) for torchao+compile and ~3× decode for vLLM (CUDA graphs +
-continuous batching; prefill number is engine throughput, CPU-bound at this
-size — util 27%). Combined with Table 4's fidelity column, the deployment
-recipe is: pick precision by fidelity budget, then let the stack deliver
-the speed.
+Findings: the stack alone — no precision change — is worth 1.4× (torchao,
+fwd) to ~3× (vLLM, decode); vLLM prefill is engine throughput (CPU-bound at
+this size, util 27%, flagged). Pick precision by fidelity budget (Table 4),
+let the stack deliver the speed.
 
 ## Table 8 — Modality
 
-**Pinned**: per-modality model ~1–2B, 1×H100, identical protocol as v1
-(train fp32 baseline vs precisions; infer bs per modality). **Variable**:
-modality. Language rows: Tables 1/4.
+**Pinned**: ~1–2B model per modality, identical protocol. **Variable**:
+modality (language rows: Tables 1/4).
 
 | modality | train bf16 | train fp16 | infer bf16 | infer fp8 | infer int8 | int4 logit-cos |
 |---|---:|---:|---:|---:|---:|---:|
@@ -174,18 +180,19 @@ modality. Language rows: Tables 1/4.
 | audio Whisper-l-v3 1.5B | 3.76× | 3.61× | 6.77× | 2.58× | 1.11× | 0.9188 |
 | mm Qwen2-VL 2.2B | 1.91× | 1.80× | 4.64× | 2.74× | 1.09× | 0.7653 |
 
-Findings: bf16 training speedup spans 1.9×–5.4× by modality — pure-GEMM
-transformer stacks (video/language) gain most; Qwen2-VL's short-sequence
-multimodal step is overhead-bound. INT4 fidelity is modality-dependent too
-(video 0.97 vs image 0.52): depth and head shapes matter more than input
-domain.
+Findings: bf16 training speedup spans 1.9×–5.4× by modality — GEMM-dominated
+stacks (video) gain most; Qwen2-VL's short-sequence step is overhead-bound.
+INT4 fidelity is architecture-, not domain-, driven (video 0.97 vs image
+0.52).
 
 ## Goal coverage summary
 
-- Precisions TF32/BF16/FP8/INT8/INT4 vs FP32: train (T1, T2), infer (T4) ✔
-- Model sizes 0.5B–14B with no-OOM GPU escalation (T3) ✔
-- Modalities ×5 (T8) ✔ · Distributed FSDP/TP × node placement (T6) ✔
+- TF32/BF16/FP8/INT8/INT4 vs FP32: training (T1, T2) and inference (T4) ✔
+- Model sizes 0.5B→14B with no-OOM GPU escalation (T3) ✔
+- Modalities ×5 (T8) ✔ · Distributed layouts FSDP/TP × node placement (T6) ✔
 - Routes eager/compile/torchao/vLLM (T5, T7) ✔
-- GPU util pinned 95–100% on every throughput row; decode rows labeled ✔
-- Failures & infeasibilities recorded inline (3B bs=4 OOM→2 GPUs; QAT
-  key-normalization bug rerun; v1 catalog in git history) ✔
+- GPU util 95–100% on every throughput row (in-window sampling); decode and
+  vLLM-prefill rows explicitly labeled where not compute-bound ✔
+- Every low-precision row carries a numerical-fidelity column ✔
+- Failures fixed by rerun (T2 key bug, 3B OOM→2 GPUs) or recorded with root
+  cause; the v1 exploratory catalog remains in git history ✔

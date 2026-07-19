@@ -1,0 +1,22 @@
+{
+  "table": "3: model scale",
+  "records": [
+    {
+      "modality": "lang3",
+      "ok": true,
+      "world_size": 2,
+      "per_rank_bs": 2,
+      "global_tokens_per_step": 4096,
+      "ms_per_step_median": 308.817436452955,
+      "tokens_per_s_aggregate": 13263.499778530093,
+      "peak_mem_gib_rank0": 30.47,
+      "loss_first": 12.333250999450684,
+      "loss_last": 0.015906620770692825,
+      "gpu_util_avg": 99.3,
+      "gpu_util_min": 97.0,
+      "power_w_avg": 426.8,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 62
+    }
+  ]
+}
