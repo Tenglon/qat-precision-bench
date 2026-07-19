@@ -348,6 +348,50 @@ Findings:
    7B decode: 846 → 5040 tok/s (6×); no precision selection inside a single
    stack comes close.
 
+
+### 8.5 Max-fusion sweep: compile + FA3-class attention for everything except FP32
+
+Per user request: FP32 stays the eager baseline; every other precision gets
+`torch.compile` + fused attention. True FA3 is source-build-only and FA4 beta
+is a JIT/CuTe-DSL distribution — both impractical on an air-gapped cluster —
+so the fused-attention arm uses **torch 2.11's cuDNN 9 SDPA backend**
+(FA3-class fused attention on Hopper, zero install; the vLLM rows in §8
+already embed real FA3 via vllm-flash-attn). Qwen2.5, bs as in §3, all rows
+99–100% util at 380–693 W (`results/lang_fused.json`, `lang7_fused.json`).
+
+Speedup vs FP32-eager ( → change from the eager-only value):
+
+| precision | train 1.5B | infer 1.5B | infer 7B |
+|---|---|---|---|
+| `tf32` | 2.93× (←2.39×) | 4.20× (←2.75×) | 5.07× (←3.77×) |
+| `bf16` | **5.35×** (←3.90×) | **11.11×** (←7.99×) | **12.25×** (←10.16×) |
+| `fp16` | 5.10× (←3.76×) | 10.99× (←7.92×) | 12.08× (←10.09×) |
+| `fp8` | **5.21×** (←2.26×, real-FP8 train) | **12.25×** (←3.83×) | **16.49×** (←6.32×) |
+| `int8` (QAT / W8A8) | 5.31× (←2.56×) | 2.75× (←1.28×) | 2.63× (←1.67×) |
+| `int4` (QAT / W4 tinygemm) | 5.32× (←2.56×) | 0.80× (←0.78×) | 0.65× (←0.64×) |
+
+Headline findings:
+
+1. **Fusion makes QAT training overhead vanish**: int8/int4 fake-quant
+   training lands at 5.31–5.32× vs FP32 — within **1% of BF16's 5.35×**
+   (eager: 35–40% slower than BF16). Inductor fuses the quantize→dequantize
+   elementwise chains into the surrounding kernels, so with `torch.compile`
+   the answer to "QAT 训练要付多少代价" drops from ×1.5–1.7 to ≈×1.01.
+2. **FP8 becomes the fastest option end-to-end once fused**: real-FP8
+   training reaches BF16 parity at 1.5B (5.21× vs 5.35× — the ≥7B folklore
+   about FP8 training is largely a statement about unfused overhead), and
+   FP8 inference clearly beats BF16 (12.25× vs 11.11× at 1.5B; 16.49× vs
+   12.25× at 7B — kernel ratio finally visible end-to-end).
+3. INT8 W8A8 inference triples with fusion (2.75×) but still can't touch
+   BF16 in pure PyTorch (§4's cuBLASLt wall); INT4 batch inference stays a
+   loss — its domain remains memory-bound decode (vLLM, §8).
+4. A measurement gotcha worth recording: `torch._dynamo`'s per-code-object
+   cache limit (8) silently exhausts across many compiled variants in one
+   process, making later `torch.compile` calls run eager. Symptom: exactly
+   1.00× "speedup". Fix: `torch._dynamo.reset()` between variants — at the
+   cost of a full recompile each time (the 0%-util compile gaps the user
+   observed; timed windows are unaffected).
+
 ## 9. Synthesis — the answer in one table
 
 Speedup vs FP32, ~1B-class models, one H100:
@@ -381,7 +425,12 @@ GPU util/功耗采样；吞吐类对比全部在 99–100% util、360–690W 下
 3. **规模效应确认**："越大越明显"在所有轴上成立：推理 BF16 加速
    7.8×→10.2×（0.5B→7B），FP8 3.9×→6.3×，vLLM 里 INT4 相对 BF16 的 decode
    优势 0.83×→1.82×，torchao 里 FP8 相对 BF16 0.99×→1.42×。
-4. **量化收益能否兑现取决于软件栈而非精度本身**：
+4. **最大融合（§8.5,除 FP32 全开 compile + cuDNN/FA3 级注意力）**：BF16 训练
+   3.9→5.35×,推理 8.0→11.1×（7B 12.25×）；**FP8 全面登顶**——训练 5.21×
+   追平 BF16（"FP8 要 7B 才划算"多半是未融合开销的错觉），推理 1.5B 12.25×、
+   7B 16.49× 明确超过 BF16；**QAT 训练税从 1.5–1.7× 降到 ≈1.01×**（fake-quant
+   被融进邻近 kernel）——即"QAT 几乎白送"成立的前提是 torch.compile。
+5. **量化收益能否兑现取决于软件栈而非精度本身**：
    - eager（地板）：BF16 最优，FP8/INT8/INT4 全部跑输 BF16；
    - `torch.compile`（一行代码）：FP8 反超 BF16（155–161k vs 142k tok/s）；
      Triton 把 int8 GEMM 提速 2.1× 但仍只有峰值 13%；
@@ -389,12 +438,12 @@ GPU util/功耗采样；吞吐类对比全部在 99–100% util、360–690W 下
      1.82×** 全面超过 BF16；bs=1 时延比 eager 好 5–6×。
    - 从 eager-BF16 到 vLLM-INT4（7B decode）总提升 **6×**——**选对栈比选
      精度更重要**。
-5. **分布式（§7.6）**：FSDP 是"放不下"的默认解——3 卡即破 7B 墙（47.4GiB/卡），
+6. **分布式（§7.6）**：FSDP 是"放不下"的默认解——3 卡即破 7B 墙（47.4GiB/卡），
    4 卡 10147 tok/s,2 节点 8 卡 14675 tok/s（跨节点扩展效率 72%）。Megatron 式
    TP 受结构约束（TP 度必须整除头数,本模型只能 2/4），同显存下吞吐只有 FSDP
    的 43%（每层 all-reduce 税），跨节点再 −26%——所以生产实践是节点内 TP、
    节点间 DP/PP,且可与 Muon/bf16 配方叠加。
-6. **测量学**：`nvidia-smi` util=100% 不代表算力跑满（eager INT8 推理
+7. **测量学**：`nvidia-smi` util=100% 不代表算力跑满（eager INT8 推理
    100% util 只有 370W）；判据是功耗 + 达成 TFLOPS/MFU。decode 类数字天然
    低算力利用（memory/launch-bound），那是被测对象而非测量缺陷。
 

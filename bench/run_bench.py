@@ -41,6 +41,26 @@ def set_tf32(on: bool):
     torch.backends.cudnn.allow_tf32 = on
 
 
+def fused_ctx(fused, precision):
+    """Best-effort fused attention: cuDNN SDPA (FA3-class on Hopper) with
+    graceful fallback for dtypes it rejects (fp32/tf32 attention)."""
+    if not fused or precision in ("fp32",):
+        return contextlib.nullcontext()
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+    backends = [SDPBackend.CUDNN_ATTENTION, SDPBackend.FLASH_ATTENTION,
+                SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+    try:
+        return sdpa_kernel(backends, set_priority=True)
+    except TypeError:  # older signature
+        return sdpa_kernel(backends)
+
+
+def maybe_compile(model, fused, precision):
+    if fused and precision != "fp32":
+        return torch.compile(model)
+    return model
+
+
 def autocast_for(precision):
     if precision in ("bf16", "fp8_train", "fp8_qat", "int8_qat", "int4_qat"):
         return torch.autocast("cuda", dtype=torch.bfloat16)
@@ -80,13 +100,14 @@ def free_cuda(*objs):
 
 # ------------------------------------------------------------------ train
 
-def bench_train(spec, precision, bs, steps, warmup):
+def bench_train(spec, precision, bs, steps, warmup, fused=False):
     set_tf32(precision != "fp32")
     model = spec.build()
     replaced = skipped = 0
     if precision in ("fp8_train", "fp8_qat", "int8_qat", "int4_qat"):
         replaced, skipped = swap_linears(model, precision)
     model.train()
+    model = maybe_compile(model, fused, precision)
     model.gradient_checkpointing_disable() if hasattr(model, "gradient_checkpointing_disable") else None
     opt = torch.optim.AdamW(model.parameters(), lr=1e-5, foreach=True)
     scaler = torch.amp.GradScaler("cuda", enabled=(precision == "fp16"))
@@ -96,7 +117,9 @@ def bench_train(spec, precision, bs, steps, warmup):
 
     def step():
         opt.zero_grad(set_to_none=True)
-        with ctx:
+        # fused_ctx must be re-created per step: sdpa_kernel returns a
+        # single-use generator context manager
+        with fused_ctx(fused, precision), ctx:
             loss = model(**batch).loss
         scaler.scale(loss).backward()
         scaler.step(opt)
@@ -107,7 +130,7 @@ def bench_train(spec, precision, bs, steps, warmup):
     med = statistics.median(times)
     rec = {
         "mode": "train", "precision": precision, "batch_size": bs, "ok": True,
-        **gpu,
+        "fused": fused, **gpu,
         "ms_per_iter_median": med * 1e3,
         "ms_per_iter_mean": statistics.mean(times) * 1e3,
         "samples_per_s": bs / med,
@@ -146,12 +169,13 @@ def infer_dtype(precision):
     return torch.float32
 
 
-def bench_infer(spec, precision, bs, steps, warmup, ref_logits):
+def bench_infer(spec, precision, bs, steps, warmup, ref_logits, fused=False):
     model, replaced, skipped = setup_infer_model(spec, precision)
+    model = maybe_compile(model, fused, precision)
     batch = cast_batch(spec.make_batch(bs, train=False), infer_dtype(precision))
 
     def step():
-        with torch.inference_mode():
+        with fused_ctx(fused, precision), torch.inference_mode():
             model(**batch)
 
     times, gpu = timed(step, warmup, steps)
@@ -168,7 +192,7 @@ def bench_infer(spec, precision, bs, steps, warmup, ref_logits):
             lg, ref_logits.flatten(), dim=0))
     rec = {
         "mode": "infer", "precision": precision, "batch_size": bs, "ok": True,
-        **gpu,
+        "fused": fused, **gpu,
         "ms_per_iter_median": med * 1e3,
         "ms_per_iter_mean": statistics.mean(times) * 1e3,
         "samples_per_s": bs / med,
@@ -273,6 +297,9 @@ def main():
     ap.add_argument("--skip-train", action="store_true")
     ap.add_argument("--skip-infer", action="store_true")
     ap.add_argument("--skip-decode", action="store_true")
+    ap.add_argument("--fused", action="store_true",
+                    help="all precisions except fp32: torch.compile + cuDNN "
+                         "fused attention (FA3-class on Hopper)")
     args = ap.parse_args()
 
     spec = get_spec(args.modality)
@@ -300,6 +327,13 @@ def main():
                    "error": f"{type(e).__name__}: {e}"}
             free_cuda()
         rec["wall_s"] = time.time() - t0
+        # each variant gets a fresh dynamo cache: the per-code-object cache
+        # limit (8) otherwise silently exhausts across variants and later
+        # torch.compile calls fall back to eager
+        try:
+            torch._dynamo.reset()
+        except Exception:  # noqa: BLE001
+            pass
         records.append(rec)
         print(json.dumps(rec), flush=True)
         # incremental save so a walltime kill loses nothing
@@ -320,14 +354,14 @@ def main():
         print(f"== train batch size: {train_bs}", flush=True)
         for p in TRAIN_PRECISIONS:
             run(("train", p), bench_train, spec, p, train_bs,
-                args.steps, args.warmup)
+                args.steps, args.warmup, fused=args.fused)
 
     if not args.skip_infer:
         infer_bs = args.infer_bs or spec.infer_bs
         ref = fp32_ref_logits(spec)
         for p in INFER_PRECISIONS:
             run(("infer", p), bench_infer, spec, p, infer_bs,
-                args.steps, args.warmup, ref)
+                args.steps, args.warmup, ref, fused=args.fused)
         free_cuda(ref)
 
     if spec.supports_decode and not args.skip_decode:
