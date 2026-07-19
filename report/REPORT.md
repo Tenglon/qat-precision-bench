@@ -68,15 +68,13 @@ scheme (STE, per-channel weights + per-token int8 acts; fp8 via e4m3 casts).
 | `int8_qat` | 428.4 | 0.66× | 40.2 GiB | 97.2% / 367.8 W | 0.966034 | 0.2609 | 0.1492 |
 | `int4_qat` | 428.2 | 0.66× | 40.2 GiB | 97.8% / 364.2 W | 0.252217 | 1.2202 | 0.3611 |
 
-Findings: (1) QAT costs ×1.52 over bf16 regardless of bit-width (the fake
-quant is the same round/clamp math). (2) The numerics column now QUANTIFIES
-what QAT does to optimization: int8 fake-quant only mildly bends the update
-(cos 0.966), fp8 more (0.848), while **int4 rotates it almost orthogonal
-(cos 0.252)** — QAT is not "the same training but noisier", it is descent on
-a different (quantized) loss landscape, and at 4 bits that landscape is far
-from the fp one. That is simultaneously why int4 PTQ fails (Table 4:
-logit-cos 0.65) and why int4 QAT needs longer schedules to converge
-(loss@30 = 0.361 vs baseline 0.220).
+Findings: (1) QAT costs ×1.52 over bf16 regardless of bit-width, and only
++0.3 GiB (fake quant stores nothing persistent). (2) The numerics column
+quantifies what QAT does to optimization: int8 barely bends the update
+(cos 0.966), fp8 more (0.848), **int4 rotates it nearly orthogonal
+(cos 0.252)** — QAT is descent on a different (quantized) loss landscape,
+which is why int4 PTQ fails (T4: logit-cos 0.65) and why int4 QAT needs
+longer schedules (loss@30 = 0.361 vs 0.220).
 
 ## Table 3 — Model scale (no-OOM rule in action)
 
@@ -93,47 +91,55 @@ logit-cos 0.65) and why int4 QAT needs longer schedules to converge
 | 14B | 8 | 8192 | 1056.0 | 7757 | 36.85 GiB | 98.9% |
 
 Findings: per-token cost grows ~linearly with parameters at pinned ~99%
-util. The GPU column IS the memory story: 3B OOMs at bs=4 on 1 GPU →
-2 GPUs; 7B needs 4 (2 proven insufficient in v1); 14B needs 8 across
-2 nodes. Aggregate throughput still degrades 4.2× from 0.5B to 14B while
-hardware grew 8× — parameters outpace parallelism.
+util; the GPU column is the memory story (3B OOMs at bs=4 on 1 GPU → 2;
+7B → 4; 14B → 8 across 2 nodes). Aggregate throughput degrades 4.2× from
+0.5B→14B while hardware grew 8×.
 
-## Table 4 — Inference precision (+ logit fidelity)
+## Table 4 — Inference precision, eager vs fused (+ logit fidelity)
 
-**Pinned**: Qwen2.5-1.5B, 1×H100, batch fwd bs=16, seq=1024, eager.
+**Pinned**: Qwen2.5-1.5B, 1×H100, batch fwd bs=16, seq=1024.
+**Variable**: precision. Two pinned stacks shown side by side: eager, and
+`torch.compile` (fp32 row stays eager — it is the baseline in both).
 
-| precision | ms/fwd | speedup | util / power | logit cos vs fp32 | mean rel-err |
-|---|---:|---:|---|---:|---:|
-| `fp32` | 1294.2 | 1.00× | 100.0% / 669.4 W | 1.0000 | 0.0000 |
-| `tf32` | 471.5 | 2.74× | 100.0% / 531.2 W | 1.0000 | 0.0100 |
-| `bf16` | 162.5 | 7.97× | 95.1% / 562.1 W | 0.9901 | 0.5340 |
-| `fp16` | 163.7 | 7.91× | 99.9% / 589.6 W | 0.9997 | 0.0850 |
-| `fp8` | 338.3 | 3.83× | 100.0% / 439.3 W | 0.9264 | 1.6033 |
-| `int8` | 1014.0 | 1.28× | 100.0% / 373.0 W | 0.9778 | 0.8775 |
-| `int4` | 1669.9 | 0.78× | 100.0% / 375.6 W | 0.6520 | 3.2868 |
+| precision | eager ms | eager × | eager GiB | fused ms | fused × | fused GiB | logit cos | rel-err |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `fp32` | 1294.2 | 1.00× | 15.2 | 1295.5 | 1.00× | 15.2 | 1.0000 | 0.0000 |
+| `tf32` | 471.5 | 2.74× | 15.7 | 308.4 | 4.20× | 15.7 | 1.0000 | 0.0100 |
+| `bf16` | 162.5 | 7.97× | 8.8 | 115.3 | 11.22× | 8.8 | 0.9901 | 0.5340 |
+| `fp16` | 163.7 | 7.91× | 8.8 | 116.5 | 11.11× | 8.8 | 0.9997 | 0.0850 |
+| `fp8` | 338.3 | 3.83× | 7.8 | 105.2 | 12.31× | 7.7 | 0.9264 | 1.6033 |
+| `int8` | 1014.0 | 1.28× | 31.0 | 474.8 | 2.73× | 17.0 | 0.9778 | 0.8775 |
+| `int4` | 1669.9 | 0.78× | 7.4 | 1620.1 | 0.80× | 7.4 | 0.6520 | 3.2868 |
 
-Findings: (1) bf16/fp16 ~8×; fp16's logit error is 6× smaller than bf16's
-(mantissa, echoing Table 1). (2) Real quantized kernels lose to bf16 in
-eager (fp8 3.83×, int8 1.28×, int4 0.78×) — stack matters (Table 7).
-(3) Fidelity cliff: int4 RTN logit cosine 0.652 — the accuracy QAT
-(Table 2) exists to recover.
+Findings: (1) **The eager int8/int4 numbers are a stack artifact, mostly
+cured (int8) or not curable (int4) by fusion**: compile fuses the dynamic
+per-token quantize/dequantize chains, taking int8 1.28×→2.73× and fp8
+3.83×→12.31× (now the fastest cell in the table); int4 stays ≤0.80× at
+bs=16 because tinygemm is a memory-bound decode kernel — batch inference is
+simply outside its regime, with or without fusion. (2) Memory column tells
+the deployment story speed hides: int4 = 7.4 GiB (2× less than bf16, its
+real selling point), while eager int8's 31 GiB peak (fp32 int-mm output +
+unfused dequant temporaries) collapses to 17 GiB under compile.
+(3) Remaining int8 gap vs bf16 is the Hopper cuBLASLt int8 path
+(kernel-level 2.5×, v1 finding) — CUTLASS-class kernels (vLLM) are needed
+to go further. (4) Fidelity is stack-independent (same math, same cos).
 
 ## Table 5 — Fusion level
 
 **Pinned**: 1.5B, bf16, 1×H100. **Variable**: eager / compile / +cuDNN attn.
 
-| mode | level | ms | vs eager | tokens/s | util |
-|---|---|---:|---:|---:|---:|
-| train | `eager` | 280.3 | 1.00× | 14612 | 99.3% |
-| train | `compile` | 204.8 | 1.37× | 20002 | 99.3% |
-| train | `compile_cudnn_attn` | 204.8 | 1.37× | 19997 | 99.3% |
-| infer | `eager` | 161.5 | 1.00× | 101472 | 99.9% |
-| infer | `compile` | 115.5 | 1.40× | 141793 | 99.9% |
-| infer | `compile_cudnn_attn` | 115.6 | 1.40× | 141681 | 99.9% |
+| mode | level | ms | vs eager | tokens/s | peak mem | util |
+|---|---|---:|---:|---:|---:|---:|
+| train | `eager` | 280.3 | 1.00× | 14612 | 39.9 GiB | 99.3% |
+| train | `compile` | 204.8 | 1.37× | 20002 | 32.7 GiB | 99.3% |
+| train | `compile_cudnn_attn` | 204.8 | 1.37× | 19997 | 32.7 GiB | 99.3% |
+| infer | `eager` | 161.5 | 1.00× | 101472 | 7.6 GiB | 99.9% |
+| infer | `compile` | 115.5 | 1.40× | 141793 | 7.6 GiB | 99.9% |
+| infer | `compile_cudnn_attn` | 115.6 | 1.40× | 141681 | 7.6 GiB | 99.9% |
 
-Findings: compile = +37% train / +40% infer. cuDNN fused attention adds ~0
-here — SDPA's default backend is already near-optimal at bs≤16/seq1024, and
-attention is a small slice of a 1.5B step.
+Findings: compile = +37% train / +40% infer at unchanged memory; cuDNN
+fused attention adds ~0 at this scale — SDPA's default backend is already
+near-optimal at bs≤16/seq1024.
 
 ## Table 6 — Distributed layout (fixed world=4, 7B, std recipe)
 
@@ -146,53 +152,54 @@ attention is a small slice of a 1.5B step.
 | FSDP, 2+2 across 2 nodes | 938.6 | 4364 | 35.53 GiB | 99.8% |
 | TP=4, 2+2 across 2 nodes | 315.1 | 3250 | 38.88 GiB | 99.3% |
 
-Findings: (1) equal GPUs: FSDP beats TP 2.3× on aggregate throughput (TP
-co-processes one stream, paying per-layer all-reduces; FSDP runs 4).
-(2) Crossing nodes: FSDP −57% (weights cross the wire), TP −26%
-(only activations do) — layout × placement interact; production uses
-TP-in-node × DP-across. (3) TP's step latency (232 vs 404 ms) is its real
-niche: latency and memory, not throughput.
+Findings: (1) equal GPUs: FSDP beats TP 2.3× on aggregate throughput; TP
+wins step latency 1.7× (232 vs 404 ms) at +3 GiB/rank — its niche is
+latency/memory, not throughput. (2) Crossing nodes: FSDP −57% (weights
+cross the wire), TP −26% (only activations do) — hence TP-in-node ×
+DP-across in production layouts.
 
 ## Table 7 — Serving/compile stack (bf16 pinned)
 
 **Pinned**: 1.5B, bf16, 1×H100, prompt 128 + 128 new for decode.
 
-| stack (1.5B, bf16 pinned) | batch fwd / prefill tok/s | decode bs=1 | decode bs=32 |
-|---|---:|---:|---:|
-| eager | 101370 | 100 | 3134 |
-| torchao+compile | 142400 | 160 | 4261 |
-| vLLM | 807473 | 293 | 8633 |
+| stack (1.5B, bf16 pinned) | batch fwd / prefill tok/s | decode bs=1 | decode bs=32 | peak mem |
+|---|---:|---:|---:|---:|
+| eager | 101370 | 100 | 3134 | 8.2 GiB |
+| torchao+compile | 142400 | 160 | 4261 | — |
+| vLLM | 807473 | 293 | 8633 | — |
 
-Findings: the stack alone — no precision change — is worth 1.4× (torchao,
-fwd) to ~3× (vLLM, decode); vLLM prefill is engine throughput (CPU-bound at
-this size, util 27%, flagged). Pick precision by fidelity budget (Table 4),
-let the stack deliver the speed.
+*(torchao/vLLM engines do not expose comparable allocator peaks — vLLM pre-reserves 85% of VRAM by design; the eager row shows the PyTorch peak.)*
+
+Findings: the stack alone — no precision change — is worth 1.4× (torchao
+fwd) to ~3× (vLLM decode). vLLM prefill is engine throughput (CPU-bound at
+this size, util 27%, flagged). Pick precision by fidelity budget (T4), let
+the stack deliver speed.
 
 ## Table 8 — Modality
 
 **Pinned**: ~1–2B model per modality, identical protocol. **Variable**:
 modality (language rows: Tables 1/4).
 
-| modality | train bf16 | train fp16 | infer bf16 | infer fp8 | infer int8 | int4 logit-cos |
-|---|---:|---:|---:|---:|---:|---:|
-| image DINOv2-g 1.1B | 3.72× | 3.58× | 8.13× | 2.83× | 1.04× | 0.5172 |
-| video VideoMAE-h 0.6B | 5.37× | 5.20× | 9.36× | 2.76× | 1.14× | 0.9695 |
-| audio Whisper-l-v3 1.5B | 3.76× | 3.61× | 6.77× | 2.58× | 1.11× | 0.9188 |
-| mm Qwen2-VL 2.2B | 1.91× | 1.80× | 4.64× | 2.74× | 1.09× | 0.7653 |
+| modality | train bf16 | train fp16 | infer bf16 | infer fp8 | infer int8 | int4 logit-cos | train mem fp32→bf16 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| image DINOv2-g 1.1B | 3.72× | 3.58× | 8.13× | 2.83× | 1.04× | 0.5172 | 32.4→26.7 GiB |
+| video VideoMAE-h 0.6B | 5.37× | 5.20× | 9.36× | 2.76× | 1.14× | 0.9695 | 22.7→18.1 GiB |
+| audio Whisper-l-v3 1.5B | 3.76× | 3.61× | 6.77× | 2.58× | 1.11× | 0.9188 | 36.0→33.0 GiB |
+| mm Qwen2-VL 2.2B | 1.91× | 1.80× | 4.64× | 2.74× | 1.09× | 0.7653 | 41.2→41.2 GiB |
 
-Findings: bf16 training speedup spans 1.9×–5.4× by modality — GEMM-dominated
-stacks (video) gain most; Qwen2-VL's short-sequence step is overhead-bound.
-INT4 fidelity is architecture-, not domain-, driven (video 0.97 vs image
-0.52).
+Findings: bf16 training speedup spans 1.9×–5.4× (GEMM-dominated stacks gain
+most; Qwen2-VL's short-sequence step is overhead-bound), with the memory
+column showing the uniform ~25–35% bf16 saving. INT4 fidelity is
+architecture-driven (video 0.97 vs image 0.52), not input-domain-driven.
 
 ## Goal coverage summary
 
-- TF32/BF16/FP8/INT8/INT4 vs FP32: training (T1, T2) and inference (T4) ✔
+- TF32/BF16/FP8/INT8/INT4 vs FP32: training (T1, T2) and inference eager+fused (T4) ✔
 - Model sizes 0.5B→14B with no-OOM GPU escalation (T3) ✔
 - Modalities ×5 (T8) ✔ · Distributed layouts FSDP/TP × node placement (T6) ✔
-- Routes eager/compile/torchao/vLLM (T5, T7) ✔
-- GPU util 95–100% on every throughput row (in-window sampling); decode and
-  vLLM-prefill rows explicitly labeled where not compute-bound ✔
-- Every low-precision row carries a numerical-fidelity column ✔
-- Failures fixed by rerun (T2 key bug, 3B OOM→2 GPUs) or recorded with root
-  cause; the v1 exploratory catalog remains in git history ✔
+- Routes eager/compile/torchao/vLLM (T4b, T5, T7) ✔
+- GPU util 95–100% on every throughput row; non-compute-bound rows labeled ✔
+- Every table now carries peak-memory columns; every low-precision row
+  carries a numerical-fidelity column ✔
+- Failures fixed by rerun (T2 key bug, 3B OOM→2 GPUs, T4b dynamo-cache
+  resets) or recorded with root cause; v1 catalog in git history ✔

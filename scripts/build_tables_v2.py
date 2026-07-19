@@ -44,15 +44,23 @@ def t3():
 
 def t4():
     d = load('table4')
+    db = load('table4b')
     b = d['records'][0]
+    fus = {r['precision']: r for r in (db['records'] if db else [])}
     rows = []
     for r in d['records']:
         sp = b['ms_per_iter_median'] / r['ms_per_iter_median']
+        f = fus.get(r['precision'])
+        if f:
+            fsp = b['ms_per_iter_median'] / f['ms_per_iter_median']
+            fcell = f"{f['ms_per_iter_median']:.1f} | {fsp:.2f}× | {f['peak_mem_gib']:.1f}"
+        else:
+            fcell = "— | — | —"
         rows.append(f"| `{r['precision']}` | {r['ms_per_iter_median']:.1f} | {sp:.2f}× | "
-                    f"{r['gpu_util_avg']}% / {r['power_w_avg']} W | "
+                    f"{r['peak_mem_gib']:.1f} | {fcell} | "
                     f"{r['logit_cos_vs_fp32']:.4f} | {r['logit_mean_rel_err']:.4f} |")
-    return ("| precision | ms/fwd | speedup | util / power | logit cos vs fp32 | mean rel-err |\n"
-            "|---|---:|---:|---|---:|---:|\n" + "\n".join(rows))
+    return ("| precision | eager ms | eager × | eager GiB | fused ms | fused × | fused GiB | logit cos | rel-err |\n"
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|\n" + "\n".join(rows))
 
 
 def t5():
@@ -65,9 +73,9 @@ def t5():
                 continue
             sp = base['ms_median'] / r['ms_median']
             out.append(f"| {mode} | `{r['level']}` | {r['ms_median']:.1f} | {sp:.2f}× | "
-                       f"{round(r['tokens_per_s'])} | {r['gpu_util_avg']}% |")
-    return ("| mode | level | ms | vs eager | tokens/s | util |\n"
-            "|---|---|---:|---:|---:|---:|\n" + "\n".join(out))
+                       f"{round(r['tokens_per_s'])} | {r['peak_mem_gib']:.1f} GiB | {r['gpu_util_avg']}% |")
+    return ("| mode | level | ms | vs eager | tokens/s | peak mem | util |\n"
+            "|---|---|---:|---:|---:|---:|---:|\n" + "\n".join(out))
 
 
 def t6():
@@ -96,15 +104,18 @@ def t7():
         if r.get('ok') and r['precision'] == 'bf16':
             er[r['mode']] = r
     rows = [f"| eager | {round(er['infer']['tokens_per_s'])} | "
-            f"{round(er['decode_bs1']['tokens_per_s'])} | {round(er['decode_bs32']['tokens_per_s'])} |"]
+            f"{round(er['decode_bs1']['tokens_per_s'])} | {round(er['decode_bs32']['tokens_per_s'])} | "
+            f"{er['infer']['peak_mem_gib']:.1f} GiB |"]
     for f, lab in [('table7_torchao', 'torchao+compile'), ('table7_vllm', 'vLLM')]:
         d = load(f)
         recs = {r['mode']: r for r in d['records'] if r.get('ok') and r.get('variant') == 'bf16'}
         pre = recs.get('infer_bs16') or recs.get('prefill_bs16')
         rows.append(f"| {lab} | {round(pre['tokens_per_s'])} | "
-                    f"{round(recs['decode_bs1']['tokens_per_s'])} | {round(recs['decode_bs32']['tokens_per_s'])} |")
-    return ("| stack (1.5B, bf16 pinned) | batch fwd / prefill tok/s | decode bs=1 | decode bs=32 |\n"
-            "|---|---:|---:|---:|\n" + "\n".join(rows))
+                    f"{round(recs['decode_bs1']['tokens_per_s'])} | {round(recs['decode_bs32']['tokens_per_s'])} | — |")
+    return ("| stack (1.5B, bf16 pinned) | batch fwd / prefill tok/s | decode bs=1 | decode bs=32 | peak mem |\n"
+            "|---|---:|---:|---:|---:|\n" + "\n".join(rows) +
+            "\n\n*(torchao/vLLM engines do not expose comparable allocator peaks — vLLM "
+            "pre-reserves 85% of VRAM by design; the eager row shows the PyTorch peak.)*")
 
 
 def t8():
@@ -117,11 +128,14 @@ def t8():
             b, r = recs.get((mode, 'fp32')), recs.get((mode, p))
             return f"{b['ms_per_iter_median']/r['ms_per_iter_median']:.2f}×" if b and r else "—"
         i4 = recs.get(('infer', 'int4'), {})
+        m_fp32 = recs.get(('train', 'fp32'), {}).get('peak_mem_gib')
+        m_bf16 = recs.get(('train', 'bf16'), {}).get('peak_mem_gib')
+        mem = f"{m_fp32:.1f}→{m_bf16:.1f} GiB" if m_fp32 and m_bf16 else "—"
         rows.append(f"| {label} | {sp('train','bf16')} | {sp('train','fp16')} | "
                     f"{sp('infer','bf16')} | {sp('infer','fp8')} | {sp('infer','int8')} | "
-                    f"{i4.get('logit_cos_vs_fp32', float('nan')):.4f} |")
-    return ("| modality | train bf16 | train fp16 | infer bf16 | infer fp8 | infer int8 | int4 logit-cos |\n"
-            "|---|---:|---:|---:|---:|---:|---:|\n" + "\n".join(rows))
+                    f"{i4.get('logit_cos_vs_fp32', float('nan')):.4f} | {mem} |")
+    return ("| modality | train bf16 | train fp16 | infer bf16 | infer fp8 | infer int8 | int4 logit-cos | train mem fp32→bf16 |\n"
+            "|---|---:|---:|---:|---:|---:|---:|---:|\n" + "\n".join(rows))
 
 
 if __name__ == "__main__":

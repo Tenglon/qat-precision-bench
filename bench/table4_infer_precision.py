@@ -27,7 +27,7 @@ from quant import swap_linears  # noqa: E402
 PRECISIONS = ["fp32", "tf32", "bf16", "fp16", "fp8", "int8", "int4"]
 
 
-def setup(spec, precision):
+def setup(spec, precision, fused=False):
     torch.backends.cuda.matmul.allow_tf32 = precision != "fp32"
     torch.backends.cudnn.allow_tf32 = precision != "fp32"
     model = spec.build()
@@ -40,6 +40,8 @@ def setup(spec, precision):
         model = model.to(torch.bfloat16)
         replaced, _ = swap_linears(model, precision)
     model.eval()
+    if fused and precision != "fp32":   # fp32 stays the eager baseline
+        model = torch.compile(model)
     return model, replaced
 
 
@@ -53,15 +55,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--bs", type=int, default=16)
+    ap.add_argument("--fused", action="store_true",
+                    help="torch.compile every non-fp32 precision")
     args = ap.parse_args()
     spec = get_spec("lang")
-    result = {"table": "4: inference precision",
+    result = {"table": "4b: inference precision (fused)" if args.fused
+              else "4: inference precision",
               "pinned": "Qwen2.5-1.5B, 1xH100, batch fwd bs=16, seq=1024, eager",
               "gpu": torch.cuda.get_device_name(0), "records": []}
     ref_logits = None
     for p in PRECISIONS:
         torch.cuda.reset_peak_memory_stats()
-        model, replaced = setup(spec, p)
+        model, replaced = setup(spec, p, fused=args.fused)
         torch.manual_seed(23)
         batch = spec.make_batch(args.bs, train=False)
         batch = {k: (v.to(dtype_of(p)) if torch.is_floating_point(v) else v)
@@ -101,6 +106,7 @@ def main():
                "logit_cos_vs_fp32": cos, "logit_mean_rel_err": mre,
                **g.stats()}
         del model, batch, lg
+        torch._dynamo.reset()   # avoid the cache-limit silent-eager fallback
         torch.cuda.empty_cache()
         result["records"].append(rec)
         print(json.dumps(rec), flush=True)
