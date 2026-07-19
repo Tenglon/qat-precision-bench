@@ -53,7 +53,13 @@ def build(spec, precision, ngpu, modality):
             replaced, _ = swap_linears(model, precision)
     else:
         from accelerate import dispatch_model, infer_auto_device_map
-        mem = {i: "52GiB" for i in range(ngpu)}
+        from accelerate.utils import get_balanced_memory
+        # get_balanced_memory: infer_auto_device_map alone is FIRST-FIT and
+        # packs GPU0 to the cap (measured: 52 GiB on GPU0, rest idle), which
+        # both starves later stages and OOMs quant-swap transients
+        mem = get_balanced_memory(
+            model, max_memory={i: 52 * 2**30 for i in range(ngpu)},
+            no_split_module_classes=["Qwen2DecoderLayer"])
         dmap = infer_auto_device_map(
             model, max_memory=mem,
             no_split_module_classes=["Qwen2DecoderLayer"])
@@ -109,9 +115,12 @@ def main():
         torch.save(lg, args.ref)
         cos, mre = 1.0, 0.0
     else:
-        ref = torch.load(args.ref).flatten()
-        a = lg.flatten()
-        cos = float(torch.nn.functional.cosine_similarity(a, ref, dim=0))
+        # float64 throughout: fp32 reductions over 1.5e8 elements inflate
+        # cosine by up to ~4% (measured) — the measurement itself needs
+        # numerical care
+        ref = torch.load(args.ref).flatten().double()
+        a = lg.flatten().double()
+        cos = float(a @ ref / (a.norm() * ref.norm()))
         mre = float(((a - ref).abs() / (ref.abs() + 1e-3)).mean())
     peaks = [round(torch.cuda.max_memory_allocated(i) / 2**30, 2)
              for i in range(args.ngpu)]

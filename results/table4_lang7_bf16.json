@@ -1,0 +1,24 @@
+{
+  "table": "4-series lang7 fused ngpu=1",
+  "records": [
+    {
+      "precision": "bf16",
+      "ok": true,
+      "ngpu": 1,
+      "fused": true,
+      "replaced_linears": 0,
+      "ms_per_iter_median": 419.23825023695827,
+      "tokens_per_s": 39080.40354318714,
+      "peak_mem_gib_per_gpu": [
+        29.39
+      ],
+      "logit_cos_vs_fp32": 0.9246625900268555,
+      "logit_mean_rel_err": 1.8310002088546753,
+      "gpu_util_avg": 100.0,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 695.1,
+      "sm_clock_mhz_avg": 1646,
+      "util_samples": 42
+    }
+  ]
+}

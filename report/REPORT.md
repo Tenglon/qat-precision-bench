@@ -147,6 +147,58 @@ model size. Fidelity moves the other way: deeper nets accumulate quant error
 fp16 stays 0.999) — the precision you can afford at deployment shrinks as
 the model grows, which raises QAT's importance at scale.
 
+
+### Measurement note — the fidelity metric itself needs numerical care
+
+While extending T4 to larger models we caught our own bug: fp32
+`F.cosine_similarity` over ~1.5×10⁸-element logit tensors returned values up
+to **1.0386** (mathematically impossible; reproduced with synthetic data
+where the true cosine was 0.9998 — fp32 reduction error at this length is
+~4%). All fidelity columns in the T4 family are therefore computed in
+**float64**; single-GPU fp32-reduction values agreed to 4 decimals in
+retrospect, but every number below is the fp64 recompute. A fitting
+meta-lesson for a numerical-precision report.
+
+### Table 4d — 7B, fused, one job per precision
+
+**Pinned**: Qwen2.5-7B, 1×H100, bs=16, seq=1024, `torch.compile` (fp32 row
+eager). Per-precision Slurm jobs (fp32 first, others dependent — wall-clock
+7× faster than the sequential design).
+
+| precision | ms/fwd | speedup | peak GiB | util | logit cos (fp64) | rel-err |
+|---|---:|---:|---:|---:|---:|---:|
+| `fp32` | 5145.1 | 1.00× | 37.9 | 100.0% | 1.0000 | 0.0000 |
+| `tf32` | 1017.4 | 5.06× | 37.9 | 100.0% | 1.0000 | 0.0209 |
+| `bf16` | 419.2 | 12.27× | 29.4 | 100.0% | 0.8877 | 1.8380 |
+| `fp16` | 421.2 | 12.22× | 29.4 | 100.0% | 0.9964 | 0.3318 |
+| `fp8` | 314.8 | 16.34× | 29.4 | 100.0% | 0.7539 | 2.9709 |
+| `int8` | 1968.3 | 2.61× | 29.4 | 100.0% | 0.8591 | 2.2028 |
+| `int4` | 7958.8 | 0.65× | 29.4 | 100.0% | 0.4065 | 4.2671 |
+
+### Fidelity vs scale (fp64, the numerics half of the scale story)
+
+| precision | 1.5B | 3B | 7B |
+|---|---:|---:|---:|
+| `bf16` | 0.9901 | 0.9619 | 0.8877 |
+| `fp16` | 0.9997 | 0.9990 | 0.9964 |
+| `fp8` | 0.9264 | 0.8488 | 0.7539 |
+| `int8` | 0.9778 | 0.9382 | 0.8591 |
+| `int4` | 0.6520 | 0.4935 | 0.4065 |
+
+Two clean monotone trends: **speed gains grow with scale** (fp8: 12.31× at
+1.5B → 14.09× at 3B → 16.34× at 7B) while **fidelity falls with scale/depth**
+(fp8 cos 0.926→0.849→0.754; int4 0.652→0.494→0.407; bf16 itself drops to
+0.888 at 7B). fp16 is the outlier that keeps ~0.996+ at every scale — the
+10-bit mantissa again. Practical reading: the bigger the model, the more the
+speed argument favors low precision AND the more the accuracy argument
+demands QAT (or fp16-flavored formats) rather than naive casting.
+
+*(14B/32B rows pending a device-map fix: accelerate's first-fit
+`infer_auto_device_map` packed GPU0 to 52 GiB leaving other GPUs idle — the
+cause of the observed 50%/25% utilization and quant-swap OOMs; rerunning with
+`get_balanced_memory`. Multi-GPU rows are layer-pipelined, so per-GPU util
+is bounded by 1/N even when balanced — flagged in those rows.)*
+
 ## Table 5 — Fusion level
 
 **Pinned**: 1.5B, bf16, 1×H100. **Variable**: eager / compile / +cuDNN attn.

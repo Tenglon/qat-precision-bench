@@ -1,0 +1,10 @@
+{
+  "table": "4-family fidelity (float64) lang14",
+  "records": [
+    {
+      "precision": "fp32",
+      "logit_cos_fp64": 1.0,
+      "logit_mean_rel_err": 0.0
+    }
+  ]
+}

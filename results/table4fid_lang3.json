@@ -1,0 +1,40 @@
+{
+  "table": "4-family fidelity (float64) lang3",
+  "records": [
+    {
+      "precision": "fp32",
+      "logit_cos_fp64": 1.0,
+      "logit_mean_rel_err": 0.0
+    },
+    {
+      "precision": "tf32",
+      "logit_cos_fp64": 0.9999936168137875,
+      "logit_mean_rel_err": 0.015556403322899492
+    },
+    {
+      "precision": "bf16",
+      "logit_cos_fp64": 0.9618890878157667,
+      "logit_mean_rel_err": 1.0526793943339823
+    },
+    {
+      "precision": "fp16",
+      "logit_cos_fp64": 0.9989859280190797,
+      "logit_mean_rel_err": 0.17161640691471433
+    },
+    {
+      "precision": "fp8",
+      "logit_cos_fp64": 0.8488134732824935,
+      "logit_mean_rel_err": 2.305470907776454
+    },
+    {
+      "precision": "int8",
+      "logit_cos_fp64": 0.9382308171903071,
+      "logit_mean_rel_err": 1.4590604418294228
+    },
+    {
+      "precision": "int4",
+      "logit_cos_fp64": 0.4935378400849762,
+      "logit_mean_rel_err": 3.8871653593426614
+    }
+  ]
+}
