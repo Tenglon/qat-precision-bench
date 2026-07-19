@@ -1,0 +1,71 @@
+{
+  "table": "1: training compute precision",
+  "pinned": "Qwen2.5-1.5B, 1xH100, bs=4, seq=1024, AdamW fp32-states, eager",
+  "gpu": "NVIDIA H100",
+  "records": [
+    {
+      "precision": "fp32",
+      "ok": true,
+      "ms_per_step_median": 1096.436017891392,
+      "tokens_per_s": 3735.740100801514,
+      "peak_mem_gib": 51.46815872192383,
+      "loss_first": 12.2455,
+      "loss_step30": 0.0912,
+      "gpu_util_avg": 99.0,
+      "gpu_util_min": 13.0,
+      "power_w_avg": 588.8,
+      "sm_clock_mhz_avg": 1979,
+      "util_samples": 109,
+      "update_cos_vs_fp32": 1.0,
+      "update_rel_err_vs_fp32": 0.0
+    },
+    {
+      "precision": "tf32",
+      "ok": true,
+      "ms_per_step_median": 457.07666384987533,
+      "tokens_per_s": 8961.297576428693,
+      "peak_mem_gib": 51.46815872192383,
+      "loss_first": 12.2455,
+      "loss_step30": 0.0903,
+      "gpu_util_avg": 97.7,
+      "gpu_util_min": 13.0,
+      "power_w_avg": 462.3,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 46,
+      "update_cos_vs_fp32": 0.9999607759291638,
+      "update_rel_err_vs_fp32": 0.008859426394062172
+    },
+    {
+      "precision": "bf16",
+      "ok": true,
+      "ms_per_step_median": 280.29182949103415,
+      "tokens_per_s": 14613.340700789215,
+      "peak_mem_gib": 39.89921569824219,
+      "loss_first": 12.2458,
+      "loss_step30": 0.2193,
+      "gpu_util_avg": 95.6,
+      "gpu_util_min": 15.0,
+      "power_w_avg": 412.0,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 28,
+      "update_cos_vs_fp32": 0.9831819793381829,
+      "update_rel_err_vs_fp32": 0.18275232575939732
+    },
+    {
+      "precision": "fp16",
+      "ok": true,
+      "ms_per_step_median": 290.2193695772439,
+      "tokens_per_s": 14113.46184772764,
+      "peak_mem_gib": 39.89921712875366,
+      "loss_first": 12.2455,
+      "loss_step30": 0.0906,
+      "gpu_util_avg": 95.9,
+      "gpu_util_min": 12.0,
+      "power_w_avg": 417.0,
+      "sm_clock_mhz_avg": 1980,
+      "util_samples": 29,
+      "update_cos_vs_fp32": 0.9999527366413598,
+      "update_rel_err_vs_fp32": 0.00972794494094248
+    }
+  ]
+}
