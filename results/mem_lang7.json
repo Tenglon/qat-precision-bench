@@ -1,0 +1,67 @@
+{
+  "model": "Qwen2.5-7B (random init)",
+  "gpu": "NVIDIA H100",
+  "gpu_mem_gib": 63.43011474609375,
+  "records": [
+    {
+      "variant": "adamw_fp32",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 61.58945608139038,
+      "reserved_at_oom_gib": 62.63671875,
+      "tried_to_allocate": "260.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "muon_fp32",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 61.57233190536499,
+      "reserved_at_oom_gib": 62.65625,
+      "tried_to_allocate": "130.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "adamw_tf32",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 61.58945608139038,
+      "reserved_at_oom_gib": 62.4453125,
+      "tried_to_allocate": "260.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "muon_tf32",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 61.57233190536499,
+      "reserved_at_oom_gib": 62.62109375,
+      "tried_to_allocate": "130.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "adamw_pure_bf16",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 56.80426549911499,
+      "reserved_at_oom_gib": 62.66796875,
+      "tried_to_allocate": "130.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "muon_pure_bf16",
+      "ok": true,
+      "batch_size": 1,
+      "ms_per_step_median": 1403.9582945115399,
+      "tokens_per_s": 729.3663950012607,
+      "peak_mem_gib": 46.68086290359497,
+      "loss_first": 12.672271728515625,
+      "loss_last": 3.051096200942993,
+      "gpu_util_avg": 99.8,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 617.9,
+      "sm_clock_mhz_avg": 1971,
+      "util_samples": 140
+    }
+  ]
+}

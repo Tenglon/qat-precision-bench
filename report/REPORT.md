@@ -189,6 +189,65 @@ compute-bound (less launch/overhead dilution), and bigger weights make
 memory-bound decode more weight-dominated. The user-quoted claim "要到 7B
 效果才明显" is directionally confirmed on every axis we measured.
 
+
+### 7.5 The 7B single-GPU wall: deficit ledger, Muon, TF32, and FSDP
+
+The scale sweep ended at a hard wall: 7B full-parameter AdamW OOMs on 64 GB
+at every compute precision. We quantified the deficit and tested the two
+escape routes users actually ask about (all cells empirically measured,
+`results/mem_lang3.json`, `mem_lang7.json`, `fsdp7b_4gpu.json`):
+
+**Deficit.** AdamW's standard recipe costs ~16 B/param of fp32 state
+(weights 4 + grads 4 + two moments 8): 7.62B params → **~122 GB state +
+activations ≈ 126 GB vs 67.7 GB available — short by ~58 GB (1.9×)**.
+The allocator dies at 61.6 GiB with 260 MiB requested, during optimizer-state
+materialization.
+
+**Single-GPU variants (7B, bs=1):**
+
+| recipe | storage | peak mem | outcome |
+|---|---|---:|---|
+| AdamW, bf16-autocast | fp32 | died @61.6 GiB | OOM |
+| Muon(+AdamW for embeds), bf16-autocast | fp32 | died @61.6 GiB | **OOM — Muon alone does NOT fix 7B** |
+| AdamW, TF32 matmuls | fp32 | died @61.6 GiB | OOM — **TF32 is a compute knob, memory-identical to FP32** |
+| Muon, TF32 matmuls | fp32 | died @61.6 GiB | OOM (same reason) |
+| AdamW, pure bf16 states | bf16 | died @56.8 GiB | OOM (borderline, as ledger predicts ~65 GB) |
+| **Muon, pure bf16** | bf16 | **46.7 GiB** | **fits with ~16 GB headroom; 729 tok/s @99.8% util/618 W; loss 12.67→3.05 over 20 steps** |
+
+Muon's saving is the optimizer state (one momentum vs Adam's two moments:
+−27 GB at 7B), but the fp32 weights+grads floor (61 GB) survives it — hence
+Muon only rescues 7B when combined with bf16 weights/grads/momentum (the
+Moonlight-style recipe). Newton–Schulz orthogonalization tolerates bf16 well.
+
+**TF32 + Muon at 3B** (largest scale where fp32 recipes fit — memory AND
+throughput measured):
+
+| recipe (3B, bs=1) | peak mem | tok/s | note |
+|---|---:|---:|---|
+| AdamW bf16-autocast | 57.5 GiB | 3487 | reference |
+| AdamW TF32 | 57.5 GiB | 2914 | identical memory, 16% slower than bf16-autocast |
+| Muon bf16-autocast | 36.9 GiB | 1679 | **−20.6 GiB vs AdamW** |
+| Muon TF32 | 38.0 GiB | 1536 | memory ≈ Muon-fp32; no reason to prefer TF32 over autocast |
+| AdamW pure bf16 | 28.8 GiB | 6000 | fastest (no fp32 master) |
+| Muon pure bf16 | 19.0 GiB | 2041 | memory champion (3× less than AdamW-fp32) |
+
+Muon's throughput cost here (~2× vs AdamW) is our *naive* per-parameter
+Newton–Schulz at bs=1, where the fixed per-step optimizer cost dominates a
+tiny fwd/bwd; production Muon (fused, comm-overlapped, large global batch)
+amortizes this to single-digit percent.
+
+**Distributed (FSDP full-shard = ZeRO-3, AdamW standard recipe, 7B):**
+
+| setup | per-rank peak | aggregate tok/s | outcome |
+|---|---:|---:|---|
+| 2× H100 | (state shard ~61 GB + gathered layers) | — | **OOM on both ranks** — as ledger predicts |
+| **4× H100** | **35.5 GiB** | **10 147 @99.5% util** | fits comfortably; loss 12.68→0.00 |
+
+So the escalation ladder for "7B won't fit" is: **Muon+pure-bf16 (1 GPU,
+46.7 GiB) → FSDP ≥4 GPUs for the standard AdamW recipe (35.5 GiB/rank) — and
+they compose** (distributed Muon is exactly how Moonlight trains). TF32
+belongs in the compute-speed conversation (§5), never in the memory one.
+
 ## 8. Realizing the potential: eager vs compile vs torchao vs vLLM
 
 The eager numbers above are the floor. Three escalation routes
@@ -258,9 +317,13 @@ GPU util/功耗采样；吞吐类对比全部在 99–100% util、360–690W 下
    才划算）。**QAT 不加速训练**——比 BF16 慢 1.5–1.7×（int4/int8/fp8 假量化
    开销相同），它是在为部署精度付训练税（§6.2 显示直接 INT4 量化会把 logit
    余弦打到 0.52–0.76，QAT 就是为了补回这个）。
-2. **单卡 7B 训练墙**：AdamW 每参数 ~16 字节 fp32 状态,64GB 上任何计算精度
-   都放不下 7B 全参训练——大模型必须 ZeRO/FSDP 分片或换优化器/LoRA,混合精度
-   本身救不了内存。
+2. **单卡 7B 训练墙（§7.5 实测）**：AdamW 全套需 ~126GB,缺 ~58GB。
+   换 Muon（标准 fp32 配方）省 27GB 优化器状态但仍 OOM——fp32 权重+梯度这
+   61GB 地板动不了；**TF32 完全不省显存**（存储仍 fp32,实测 3B 时 57.5GiB
+   与 fp32 分毫不差,7B 时死在同一位置），它只是计算模式。真正的出路：
+   **Muon+纯 bf16 单卡 46.7GiB 放下**（729 tok/s,loss 正常下降）；或
+   **FSDP 全分片 ≥4 卡**跑标准 AdamW（35.5GiB/卡,聚合 10147 tok/s;
+   2 卡仍 OOM）。两者可叠加（分布式 Muon 即 Moonlight 路线）。
 3. **规模效应确认**："越大越明显"在所有轴上成立：推理 BF16 加速
    7.8×→10.2×（0.5B→7B），FP8 3.9×→6.3×，vLLM 里 INT4 相对 BF16 的 decode
    优势 0.83×→1.82×，torchao 里 FP8 相对 BF16 0.99×→1.42×。
