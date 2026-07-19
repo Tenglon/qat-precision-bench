@@ -283,6 +283,10 @@ def _dims_ok(lin: nn.Linear, mode: str) -> bool:
     if min(n, k) < 256:          # skip tiny projections (heads, gates)
         return False
     if mode == "int4":
+        # huge-N projections (vocab lm_head) crash/underperform tinygemm and
+        # are conventionally left unquantized in weight-only int4 deployments
+        if n > 65536:
+            return False
         return k % (Int4InferLinear.INNER_K_TILES * 16) == 0 and n % 16 == 0
     if mode in ("fp8", "int8", "fp8_train"):
         return k % 16 == 0 and n % 16 == 0

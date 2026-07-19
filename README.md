@@ -9,6 +9,20 @@ NVIDIA H100 (MareNostrum 5, BSC).**
 
 📊 **Results & analysis: [report/REPORT.md](report/REPORT.md)** (English + 中文结论)
 
+## Headline results (speedup vs FP32, H100, stock PyTorch eager)
+
+| Precision | GEMM ceiling | Training e2e | Batch inference e2e | LLM decode bs=32 |
+|---|---:|---:|---:|---:|
+| TF32 | 5.5–7.5× | 1.7–2.4× | 2.4–3.2× | 1.25× |
+| BF16 | 13–15× | 1.9–5.4× (typ ~3.8×) | 4.7–9.2× | 1.94× |
+| FP16 | 12–15× | ≈ BF16 | ≈ BF16 | 1.83× |
+| FP8 | 19–24× | 2.0–2.6× (naive) | 2.6–3.8× | 0.87× |
+| INT8 | 2.5× (stock torch) | QAT: 2.2–3.1× | 1.0–1.3× | 0.63× |
+| INT4 | 3.6× (small M only) | QAT: 2.2–3.1× | 0.6–0.8× | 1.42× |
+
+QAT itself never accelerates training (it costs 1.5–1.7× vs BF16); its payoff
+is quantized deployment. Full nuance in the report.
+
 ## What is measured
 
 | Axis | Detail |
