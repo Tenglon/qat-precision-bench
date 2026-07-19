@@ -248,6 +248,60 @@ So the escalation ladder for "7B won't fit" is: **Muon+pure-bf16 (1 GPU,
 they compose** (distributed Muon is exactly how Moonlight trains). TF32
 belongs in the compute-speed conversation (§5), never in the memory one.
 
+
+### 7.6 Distributed scaling for the 7B wall (FSDP vs Megatron-style TP)
+
+All runs: Qwen2.5-7B, per-rank bs=1, seq 1024; NVLink within node, InfiniBand
+across nodes. TP = transformers `tp_plan="auto"` (torch DTensor colwise/rowwise
+sharding — Megatron-style intra-layer partitioning). "std recipe" = fp32
+master + bf16 autocast + AdamW.
+
+| setup | GPUs | nodes | per-rank peak | aggregate tok/s | util | note |
+|---|---:|---:|---:|---:|---:|---|
+| single GPU, std recipe | 1 | 1 | OOM @61.6 GiB | — | — | needs ~126 GB |
+| FSDP full-shard | 2 | 1 | OOM | — | — | shard ~61 GB still too big |
+| FSDP full-shard | 3 | 1 | 47.4 GiB | 5 538 | 99.6% | minimal fix for the wall |
+| FSDP full-shard | 4 | 1 | 35.5 GiB | 10 147 | 99.5% | |
+| FSDP full-shard | 8 | **2** | 29.4 GiB | **14 675** | 97.9% | 72% scaling eff. vs 2×4GPU (step 404→558 ms over IB) |
+| TP=2, std recipe | 2 | 1 | OOM | — | — | ~61 GB/rank, same wall |
+| TP=2, bf16 storage | 2 | 1 | 32.8 GiB | 4 625 | 99.0% | |
+| TP=4, std recipe | 4 | 1 | 38.9 GiB | 4 379 | 98.5% | 1 095 tok/s/GPU |
+| TP=4, std recipe | 4 | **2** | 38.9 GiB | 3 255 | 99.3% | **−26% for crossing nodes** (step 234→315 ms) |
+| TP=8 | 8 | 2 | — | — | — | **infeasible**: 28 Q-heads / 4 KV-heads not divisible by 8 |
+
+Readings:
+
+1. **FSDP is the default answer to "it doesn't fit"**: at 4 GPUs it delivers
+   2.3× the aggregate throughput of TP=4 (10 147 vs 4 379) at similar
+   per-rank memory, because data parallelism processes W independent streams
+   while TP taxes every layer with an all-reduce to co-process one stream.
+2. **TP's constraints are structural**: the TP degree must divide the head
+   counts (Qwen2.5-7B: 28 Q / 4 KV → TP ∈ {2, 4} only). TP earns its place
+   when the model (or KV cache) cannot fit even sharded, or for latency —
+   which is why Megatron deployments put TP inside the node and scale out
+   with DP/PP.
+3. **Cross-node penalties are real but survivable on this fabric**: −28%
+   step-time for FSDP (all-gathers over IB), −26% throughput for TP.
+   Both keep 97–99% util — another reminder that util% ≠ efficiency
+   (NCCL wait time counts as "kernel resident").
+4. Composition (not run here) follows directly: Muon/bf16 recipes from §7.5
+   cut the sharded state further, and TP×DP meshes combine both axes —
+   the standard Megatron/Moonlight production layout.
+
+### 7.7 Infeasible / failed items and root causes (完整失败清单)
+
+| item | root cause | status |
+|---|---|---|
+| 7B single-GPU full-param AdamW (any compute precision) | 16 B/param fp32 state ≈ 126 GB > 64 GB | physics; use §7.5/§7.6 routes |
+| TF32 as a memory fix | TF32 is a matmul mode; storage identical to FP32 (measured byte-identical peaks) | misconception, documented |
+| TP=8 for Qwen2.5-7B | head counts (28 Q / 4 KV) not divisible by 8 | architectural constraint |
+| torchao INT4 (`int4wo`) | torchao 0.17 requires `mslk` kernel package; PyPI only has a 0.0.0 placeholder | covered via vLLM AWQ-Marlin + eager tinygemm instead |
+| HF `generate` + `torch.compile(mode="reduce-overhead")` | CUDA-graph pool conflicts with cache-tensor mutation (both transformers 5.10 and 5.14, different symptoms incl. segfault) | dropped; vLLM provides the CUDA-graph decode data |
+| vLLM from PyPI on MN5 | default wheel links `libcudart.so.13` (CUDA 13) — node driver is CUDA-12.x | fixed via GitHub release `+cu129` wheel |
+| flashinfer JIT at vLLM startup | `ninja` not on compute-node PATH | fixed: venv/bin on PATH |
+| model/venv downloads via transfer1.bsc.es | transfer node had no DNS at benchmark time (contrary to older docs) | worked around: build/download locally + rsync |
+| vLLM 0.5–1.5B prefill util cells | measurement window shorter than 200 ms sampler period; engine CPU-scheduling-bound at small scale | cells rely on achieved throughput; flagged |
+
 ## 8. Realizing the potential: eager vs compile vs torchao vs vLLM
 
 The eager numbers above are the floor. Three escalation routes
@@ -335,7 +389,12 @@ GPU util/功耗采样；吞吐类对比全部在 99–100% util、360–690W 下
      1.82×** 全面超过 BF16；bs=1 时延比 eager 好 5–6×。
    - 从 eager-BF16 到 vLLM-INT4（7B decode）总提升 **6×**——**选对栈比选
      精度更重要**。
-5. **测量学**：`nvidia-smi` util=100% 不代表算力跑满（eager INT8 推理
+5. **分布式（§7.6）**：FSDP 是"放不下"的默认解——3 卡即破 7B 墙（47.4GiB/卡），
+   4 卡 10147 tok/s,2 节点 8 卡 14675 tok/s（跨节点扩展效率 72%）。Megatron 式
+   TP 受结构约束（TP 度必须整除头数,本模型只能 2/4），同显存下吞吐只有 FSDP
+   的 43%（每层 all-reduce 税），跨节点再 −26%——所以生产实践是节点内 TP、
+   节点间 DP/PP,且可与 Muon/bf16 配方叠加。
+6. **测量学**：`nvidia-smi` util=100% 不代表算力跑满（eager INT8 推理
    100% util 只有 370W）；判据是功耗 + 达成 TFLOPS/MFU。decode 类数字天然
    低算力利用（memory/launch-bound），那是被测对象而非测量缺陷。
 
