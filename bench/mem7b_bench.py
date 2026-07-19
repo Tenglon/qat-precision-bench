@@ -41,8 +41,9 @@ VARIANTS = ["adamw_fp32", "muon_fp32", "adamw_tf32", "muon_tf32",
 
 # torchao low-bit optimizer states (quantized m/v), paired with pure-bf16
 # weights/grads — run via --variants on the venv with torchao installed
-LOWBIT_VARIANTS = ["adamw8bit_pure_bf16", "adamw4bit_pure_bf16",
-                   "adamwfp8_pure_bf16", "adamw_pure_bf16", "muon_pure_bf16"]
+LOWBIT_VARIANTS = ["adamw_fp32", "adamw_pure_bf16",
+                   "adamw8bit_pure_bf16", "adamw4bit_pure_bf16",
+                   "adamwfp8_pure_bf16", "muon_pure_bf16"]
 
 
 def setup(spec, variant):

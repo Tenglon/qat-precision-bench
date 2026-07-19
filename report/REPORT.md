@@ -328,6 +328,28 @@ Optimizer-state precision is nearly free to lower (states only feed the
 update; INT4 states show mild noise); INT8-state Adam is production-proven
 (bitsandbytes lineage).
 
+**Head-to-head at 3B** (largest scale where every variant fits; bs=1, same
+process/venv, 20 steps):
+
+| optimizer (weights) | peak mem | vs fp32 recipe | tok/s | 20-step loss |
+|---|---:|---:|---:|---|
+| AdamW fp32-states (fp32 master, mixed prec) | 57.5 GiB | 1.00× | 3 486 | →0.01 (reference convergence) |
+| AdamW bf16-states (bf16 master) | 28.8 GiB | −50% | **5 993** | →1.21 |
+| AdamW-INT8 states (bf16 master) | 19.7 GiB | −66% | 4 994 | →1.20 |
+| AdamW-INT4 states (bf16 master) | 21.6 GiB | −62% | 4 935 | →3.62 (noisy) |
+| **AdamW-FP8 states (bf16 master)** | **18.6 GiB** | **−68%** | 5 100 | →1.20 |
+| Muon (bf16 master) | 19.0 GiB | −67% | 2 042 | →3.47 |
+
+Readings: (1) **AdamW-FP8 is the memory champion** (3× less than the fp32
+recipe) at only ~15% throughput cost vs plain-bf16 states — the cost is the
+per-step quantize/dequantize of the moments (visible as util dropping to
+60–72% during optimizer segments). (2) INT4 states get noticeably noisy;
+INT8/FP8 match bf16-state convergence. (3) All bf16-master variants stop at
+loss ≈1.2 where the fp32-master reference reaches 0.01 — the master-weight
+precision effect of §7.8(b) again, now at the bf16-vs-fp32 boundary.
+(4) Muon's memory is competitive but its naive NS step is 2.4× slower at
+bs=1; its niche vs low-bit Adam is optimizer-quality, not economics.
+
 **(b) Trainable master weights have a hard precision floor.** If the stored
 weights themselves are quantized after every update ("权重也转换为相应精度"),
 the update (~lr ≈ 1e-5) must survive the quantization step
