@@ -1,0 +1,76 @@
+{
+  "model": "Qwen2.5-7B (random init)",
+  "gpu": "NVIDIA H100",
+  "gpu_mem_gib": 63.43011474609375,
+  "records": [
+    {
+      "variant": "adamw8bit_pure_bf16",
+      "ok": true,
+      "batch_size": 1,
+      "ms_per_step_median": 285.3694566292688,
+      "tokens_per_s": 3588.330762847918,
+      "peak_mem_gib": 46.91811561584473,
+      "loss_first": 12.672271728515625,
+      "loss_last": 0.006368247326463461,
+      "gpu_util_avg": 99.3,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 550.4,
+      "sm_clock_mhz_avg": 1977,
+      "util_samples": 29
+    },
+    {
+      "variant": "adamw4bit_pure_bf16",
+      "ok": true,
+      "batch_size": 1,
+      "ms_per_step_median": 430.44639099389315,
+      "tokens_per_s": 2378.9257417993495,
+      "peak_mem_gib": 48.18423080444336,
+      "loss_first": 12.672271728515625,
+      "loss_last": 0.10393431037664413,
+      "gpu_util_avg": 99.5,
+      "gpu_util_min": 99.0,
+      "power_w_avg": 475.5,
+      "sm_clock_mhz_avg": 1979,
+      "util_samples": 43
+    },
+    {
+      "variant": "adamwfp8_pure_bf16",
+      "ok": true,
+      "batch_size": 1,
+      "ms_per_step_median": 217.68197556957603,
+      "tokens_per_s": 4704.110192498261,
+      "peak_mem_gib": 43.87232780456543,
+      "loss_first": 12.672271728515625,
+      "loss_last": 0.006497213616967201,
+      "gpu_util_avg": 99.0,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 542.0,
+      "sm_clock_mhz_avg": 1979,
+      "util_samples": 22
+    },
+    {
+      "variant": "adamw_pure_bf16",
+      "ok": false,
+      "oom": true,
+      "alloc_at_oom_gib": 56.80426597595215,
+      "reserved_at_oom_gib": 62.5859375,
+      "tried_to_allocate": "130.00 MiB",
+      "error": "CUDA out of memory"
+    },
+    {
+      "variant": "muon_pure_bf16",
+      "ok": true,
+      "batch_size": 1,
+      "ms_per_step_median": 1420.860990532674,
+      "tokens_per_s": 720.6897837459155,
+      "peak_mem_gib": 46.68086338043213,
+      "loss_first": 12.672271728515625,
+      "loss_last": 3.0502963066101074,
+      "gpu_util_avg": 99.9,
+      "gpu_util_min": 98.0,
+      "power_w_avg": 636.1,
+      "sm_clock_mhz_avg": 1951,
+      "util_samples": 141
+    }
+  ]
+}

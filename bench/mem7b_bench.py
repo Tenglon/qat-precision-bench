@@ -39,6 +39,11 @@ from muon import build_muon_adamw  # noqa: E402
 VARIANTS = ["adamw_fp32", "muon_fp32", "adamw_tf32", "muon_tf32",
             "adamw_pure_bf16", "muon_pure_bf16"]
 
+# torchao low-bit optimizer states (quantized m/v), paired with pure-bf16
+# weights/grads — run via --variants on the venv with torchao installed
+LOWBIT_VARIANTS = ["adamw8bit_pure_bf16", "adamw4bit_pure_bf16",
+                   "adamwfp8_pure_bf16", "adamw_pure_bf16", "muon_pure_bf16"]
+
 
 def setup(spec, variant):
     tf32 = variant.endswith("_tf32") or variant.endswith("pure_bf16")
@@ -48,7 +53,17 @@ def setup(spec, variant):
     if variant.endswith("pure_bf16"):
         model = model.to(torch.bfloat16)
     model.train()
-    if variant.startswith("adamw"):
+    if variant.startswith("adamw8bit") or variant.startswith("adamw4bit") \
+            or variant.startswith("adamwfp8"):
+        try:
+            from torchao.optim import AdamW4bit, AdamW8bit, AdamWFp8
+        except ImportError:
+            from torchao.prototype.low_bit_optim import (AdamW4bit, AdamW8bit,
+                                                         AdamWFp8)
+        cls = {"adamw8bit": AdamW8bit, "adamw4bit": AdamW4bit,
+               "adamwfp8": AdamWFp8}[variant.split("_")[0]]
+        opts = [cls(model.parameters(), lr=1e-5)]
+    elif variant.startswith("adamw"):
         opts = [torch.optim.AdamW(model.parameters(), lr=1e-5, foreach=True)]
     else:
         opts = list(build_muon_adamw(model, muon_lr=5e-4, adamw_lr=1e-5))
@@ -101,7 +116,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--modality", default="lang7")
     ap.add_argument("--bs", type=int, default=1)
+    ap.add_argument("--variants", default="",
+                    help="'lowbit' for torchao low-bit optimizer set")
     args = ap.parse_args()
+    global VARIANTS
+    if args.variants == "lowbit":
+        VARIANTS = LOWBIT_VARIANTS
     spec = get_spec(args.modality)
     dev = torch.cuda.get_device_properties(0)
     result = {"model": spec.desc, "gpu": torch.cuda.get_device_name(0),

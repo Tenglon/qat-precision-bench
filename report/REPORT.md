@@ -302,6 +302,54 @@ Readings:
 | model/venv downloads via transfer1.bsc.es | transfer node had no DNS at benchmark time (contrary to older docs) | worked around: build/download locally + rsync |
 | vLLM 0.5–1.5B prefill util cells | measurement window shorter than 200 ms sampler period; engine CPU-scheduling-bound at small scale | cells rely on achieved throughput; flagged |
 
+
+### 7.8 Low-bit AdamW states, and the master-weight precision floor
+
+Two follow-up questions from the 7B wall: (a) can AdamW itself go
+BF16/FP8/INT8/INT4? (b) why not store the *weights* in the target precision
+too? Both answered empirically (`results/mem_lowbit7b.json`,
+`results/master_prec.json`).
+
+**(a) Quantized optimizer states work — and beat Muon on speed** (7B, bs=1,
+bf16 weights/grads, torchao low-bit optimizers):
+
+| optimizer | states | peak mem | tok/s | 20-step loss |
+|---|---|---:|---:|---|
+| AdamW (bf16 states) | 30.5 GB | OOM @56.8 GiB | — | — |
+| **AdamW-FP8 states** | ~15 GB | **43.9 GiB** | **4 704** | 12.67→0.01 ✓ |
+| AdamW-INT8 states | ~8 GB | 46.9 GiB | 3 588 | 12.67→0.01 ✓ |
+| AdamW-INT4 states | ~4 GB | 48.2 GiB | 2 379 | 12.67→0.10 (noisier) |
+| Muon (bf16, §7.5) | 13 GB | 46.7 GiB | 721 | 12.67→3.05 |
+
+torchao's fused low-bit optimizers make **AdamW-FP8 the best single-GPU 7B
+recipe measured in this study**: less memory than Muon-bf16 *and* 6.5× its
+throughput at bs=1 (Muon's per-step Newton–Schulz dominates at tiny batch).
+Optimizer-state precision is nearly free to lower (states only feed the
+update; INT4 states show mild noise); INT8-state Adam is production-proven
+(bitsandbytes lineage).
+
+**(b) Trainable master weights have a hard precision floor.** If the stored
+weights themselves are quantized after every update ("权重也转换为相应精度"),
+the update (~lr ≈ 1e-5) must survive the quantization step
+(INT8/per-channel ≈ 5e-4, INT4 ≈ 8e-3, FP8 ≈ 6% relative). Measured
+(Qwen2.5-1.5B, fixed batch, 30 steps, same lr — loss drop is the signal):
+
+| master storage | loss 12.2 → (30 steps) | verdict |
+|---|---|---|
+| bf16 | **7.38** (−4.84) | trains normally |
+| fp8, round-to-nearest | 12.00 (−0.22) | 22× slower progress |
+| int8, round-to-nearest | 12.21 (**−0.006**) | **frozen — updates rounded away** |
+| int4, round-to-nearest | 12.22 (−0.006) | frozen |
+| int8, stochastic rounding | 12.18 (−0.06) | survives in expectation, 80× slower here |
+| int4, stochastic rounding | 12.14 (−0.13) | noise-dominated |
+
+This is why every real recipe — TE FP8, our `fp8_train`, QAT, even BitNet —
+keeps a bf16/fp32 master (or hides it in distributed optimizer shards, as
+FP8-LM does), and why the only mainstream "weights truly stored in INT4
+during training" is QLoRA, where the INT4 base is **frozen** and only bf16
+adapters train. Low precision belongs to *compute* and *deployment*;
+trainable *storage* bottoms out around bf16-with-care.
+
 ## 8. Realizing the potential: eager vs compile vs torchao vs vLLM
 
 The eager numbers above are the floor. Three escalation routes
