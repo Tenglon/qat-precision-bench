@@ -177,13 +177,13 @@ eager). Per-precision Slurm jobs (fp32 first, others dependent — wall-clock
 
 ### Fidelity vs scale (fp64, the numerics half of the scale story)
 
-| precision | 1.5B | 3B | 7B |
-|---|---:|---:|---:|
-| `bf16` | 0.9901 | 0.9619 | 0.8877 |
-| `fp16` | 0.9997 | 0.9990 | 0.9964 |
-| `fp8` | 0.9264 | 0.8488 | 0.7539 |
-| `int8` | 0.9778 | 0.9382 | 0.8591 |
-| `int4` | 0.6520 | 0.4935 | 0.4065 |
+| precision | 1.5B | 3B | 7B | 14B |
+|---|---:|---:|---:|---:|
+| `bf16` | 0.9901 | 0.9619 | 0.8877 | 0.7479 |
+| `fp16` | 0.9997 | 0.9990 | 0.9964 | 0.9882 |
+| `fp8` | 0.9264 | 0.8488 | 0.7539 | 0.5380 |
+| `int8` | 0.9778 | 0.9382 | 0.8591 | 0.7012 |
+| `int4` | 0.6520 | 0.4935 | 0.4065 | 0.2397 |
 
 Two clean monotone trends: **speed gains grow with scale** (fp8: 12.31× at
 1.5B → 14.09× at 3B → 16.34× at 7B) while **fidelity falls with scale/depth**
@@ -211,8 +211,8 @@ is bounded by 1/N even when balanced — flagged in those rows.)*
 | `bf16` | 1006.2 | 10.41× | 17–20 | 49.8% | 0.7479 |
 | `fp16` | 1023.9 | 10.23× | 17–20 | 49.3% | 0.9882 |
 | `fp8` | 1251.1 | 8.37× | 19–23 | 49.7% | 0.5380 |
-| `int8` | 4950.0 | 2.12× | 19–22 | 49.8% | *(pending)* |
-| `int4` | 15979.4 | 0.66× | 16–19 | 50.0% | *(pending)* |
+| `int8` | 4950.0 | 2.12× | 19–22 | 49.8% | 0.7012 |
+| `int4` | 15979.4 | 0.66× | 16–19 | 50.0% | 0.2397 |
 
 ### Table 4f — 32B, fused, 4 GPUs
 

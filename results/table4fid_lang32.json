@@ -10,6 +10,11 @@
       "precision": "tf32",
       "logit_cos_fp64": 0.999959424986175,
       "logit_mean_rel_err": 0.04177556242006515
+    },
+    {
+      "precision": "bf16",
+      "logit_cos_fp64": 0.7100007790066029,
+      "logit_mean_rel_err": 2.952732468954177
     }
   ]
 }

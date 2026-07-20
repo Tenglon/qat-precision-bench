@@ -25,6 +25,16 @@
       "precision": "fp8",
       "logit_cos_fp64": 0.5380329833721867,
       "logit_mean_rel_err": 3.9548502522386073
+    },
+    {
+      "precision": "int8",
+      "logit_cos_fp64": 0.7012455003908827,
+      "logit_mean_rel_err": 3.190118081114387
+    },
+    {
+      "precision": "int4",
+      "logit_cos_fp64": 0.2396762773174398,
+      "logit_mean_rel_err": 4.6895690265646595
     }
   ]
 }
