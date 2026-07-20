@@ -15,6 +15,26 @@
       "precision": "bf16",
       "logit_cos_fp64": 0.7100007790066029,
       "logit_mean_rel_err": 2.952732468954177
+    },
+    {
+      "precision": "fp16",
+      "logit_cos_fp64": 0.9848094026382858,
+      "logit_mean_rel_err": 0.6952885827551581
+    },
+    {
+      "precision": "fp8",
+      "logit_cos_fp64": 0.4922221851595581,
+      "logit_mean_rel_err": 4.0976603725407665
+    },
+    {
+      "precision": "int8",
+      "logit_cos_fp64": 0.657283030749408,
+      "logit_mean_rel_err": 3.388342357144781
+    },
+    {
+      "precision": "int4",
+      "logit_cos_fp64": 0.20192772653030824,
+      "logit_mean_rel_err": 4.747290809485004
     }
   ]
 }
