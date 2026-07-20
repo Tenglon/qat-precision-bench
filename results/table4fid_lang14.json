@@ -5,6 +5,26 @@
       "precision": "fp32",
       "logit_cos_fp64": 1.0,
       "logit_mean_rel_err": 0.0
+    },
+    {
+      "precision": "tf32",
+      "logit_cos_fp64": 0.9999641902943405,
+      "logit_mean_rel_err": 0.03920803752913802
+    },
+    {
+      "precision": "bf16",
+      "logit_cos_fp64": 0.7478985702894686,
+      "logit_mean_rel_err": 2.7743213399880844
+    },
+    {
+      "precision": "fp16",
+      "logit_cos_fp64": 0.9881966182855888,
+      "logit_mean_rel_err": 0.6158227697132755
+    },
+    {
+      "precision": "fp8",
+      "logit_cos_fp64": 0.5380329833721867,
+      "logit_mean_rel_err": 3.9548502522386073
     }
   ]
 }

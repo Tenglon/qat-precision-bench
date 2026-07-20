@@ -199,6 +199,50 @@ cause of the observed 50%/25% utilization and quant-swap OOMs; rerunning with
 `get_balanced_memory`. Multi-GPU rows are layer-pipelined, so per-GPU util
 is bounded by 1/N even when balanced — flagged in those rows.)*
 
+
+### Table 4e — 14B, fused, 2 GPUs (uniform per no-OOM rule)
+
+**Pinned**: Qwen2.5-14B, 2×H100 (balanced layer pipeline), `torch.compile` (fp32 eager), bs=16, seq=1024. Util ≈50% is the 1/N pipeline bound, not a measurement flaw.
+
+| precision | ms/fwd | speedup | GiB/GPU | util | logit cos (fp64) |
+|---|---:|---:|---:|---:|---:|
+| `fp32` | 10476.5 | 1.00× | 35–39 | 50.0% | 1.0000 |
+| `tf32` | 2234.1 | 4.69× | 35–39 | 50.2% | 1.0000 |
+| `bf16` | 1006.2 | 10.41× | 17–20 | 49.8% | 0.7479 |
+| `fp16` | 1023.9 | 10.23× | 17–20 | 49.3% | 0.9882 |
+| `fp8` | 1251.1 | 8.37× | 19–23 | 49.7% | 0.5380 |
+| `int8` | 4950.0 | 2.12× | 19–22 | 49.8% | *(pending)* |
+| `int4` | 15979.4 | 0.66× | 16–19 | 50.0% | *(pending)* |
+
+### Table 4f — 32B, fused, 4 GPUs
+
+**Pinned**: Qwen2.5-32B, 4×H100 (balanced layer pipeline), `torch.compile` (fp32 eager), bs=16, seq=1024. Util ≈25% is the 1/N pipeline bound.
+
+| precision | ms/fwd | speedup | GiB/GPU | util | logit cos (fp64) |
+|---|---:|---:|---:|---:|---:|
+| `fp32` | 22676.2 | 1.00× | 38–40 | 25.0% | 1.0000 |
+| `tf32` | 4676.8 | 4.85× | 38–39 | 24.6% | 1.0000 |
+| `bf16` | 2133.4 | 10.63× | 19–19 | 25.0% | *(pending)* |
+| `fp16` | 2178.1 | 10.41× | 19–19 | 24.8% | *(pending)* |
+| `fp8` | 2804.8 | 8.08× | 21–25 | 25.5% | *(pending)* |
+| `int8` | 11447.0 | 1.98× | 21–25 | 25.0% | *(pending)* |
+| `int4` | 37221.8 | 0.61× | 19–22 | 25.0% | *(pending)* |
+
+**A new reversal at multi-GPU scale**: fp8 led every single-GPU table
+(16.34× at 7B) but falls BEHIND bf16 under the layer pipeline (8.4× vs 10.4×
+at 14B; 8.1× vs 10.6× at 32B). Mechanism: accelerate's dispatch hooks
+graph-break `torch.compile` at every layer, so the dynamic per-tensor
+quantize/dequantize chains around each fp8 GEMM stop being fused — bf16 pays
+no such per-layer tax. The stack lesson generalizes: **fp8's end-to-end win
+is conditional on whole-graph fusion**, which pipelines (and any
+hook-instrumented serving path) can silently revoke; TP/vLLM-style
+tensor-parallel serving preserves it.
+
+*(Device-map postscript: the first attempt used accelerate's first-fit
+`infer_auto_device_map`, which packed GPU0 to 52 GiB while other GPUs sat
+near-empty — OOMing quant swaps. `get_balanced_memory` fixed both the OOMs
+and the skew: per-GPU peaks now within 1–4 GiB of each other.)*
+
 ## Table 5 — Fusion level
 
 **Pinned**: 1.5B, bf16, 1×H100. **Variable**: eager / compile / +cuDNN attn.

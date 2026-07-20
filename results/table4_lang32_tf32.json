@@ -7,21 +7,21 @@
       "ngpu": 4,
       "fused": true,
       "replaced_linears": 0,
-      "ms_per_iter_median": 4611.269664950669,
-      "tokens_per_s": 3553.034454812192,
+      "ms_per_iter_median": 4676.76552478224,
+      "tokens_per_s": 3503.275910066685,
       "peak_mem_gib_per_gpu": [
-        57.63,
-        56.91,
-        32.51,
-        0.0
+        37.64,
+        38.75,
+        38.75,
+        37.96
       ],
-      "logit_cos_vs_fp32": 1.0412170886993408,
-      "logit_mean_rel_err": 0.04177556559443474,
-      "gpu_util_avg": 25.0,
+      "logit_cos_vs_fp32": 0.999959424986175,
+      "logit_mean_rel_err": 0.04177556242006515,
+      "gpu_util_avg": 24.6,
       "gpu_util_min": 0.0,
-      "power_w_avg": 266.7,
-      "sm_clock_mhz_avg": 1964,
-      "util_samples": 1760
+      "power_w_avg": 269.1,
+      "sm_clock_mhz_avg": 1963,
+      "util_samples": 1792
     }
   ]
 }
